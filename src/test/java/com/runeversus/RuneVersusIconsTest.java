@@ -5,11 +5,20 @@ import com.runeversus.model.MetricType;
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import net.runelite.client.game.SkillIconManager;
+import net.runelite.client.hiscore.HiscoreSkill;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class RuneVersusIconsTest
 {
+	@Test
+	public void resolvesNativeHiscoreSpriteForEachKnownBoss()
+	{
+		Assert.assertSame(HiscoreSkill.VORKATH, RuneVersusIcons.findBoss("Vorkath"));
+		Assert.assertSame(HiscoreSkill.THE_LEVIATHAN, RuneVersusIcons.findBoss("The Leviathan"));
+		Assert.assertNull(RuneVersusIcons.findBoss("Total boss KC"));
+	}
+
 	@Test
 	public void usesNativeRuneLiteSkillSpritesAndAllowsMissingItemService()
 	{

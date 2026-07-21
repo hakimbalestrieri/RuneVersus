@@ -13,40 +13,23 @@ import net.runelite.api.clan.ClanChannel;
 import net.runelite.api.clan.ClanChannelMember;
 import net.runelite.api.clan.ClanMember;
 import net.runelite.api.clan.ClanSettings;
-import net.runelite.client.party.PartyMember;
-import net.runelite.client.party.PartyService;
 import net.runelite.client.util.Text;
 
 @Singleton
 public class RosterService
 {
 	private final Client client;
-	private final PartyService partyService;
 
 	@Inject
-	public RosterService(Client client, PartyService partyService)
+	public RosterService(Client client)
 	{
 		this.client = client;
-		this.partyService = partyService;
 	}
 
 	public String getLocalPlayerName()
 	{
 		Player local = client.getLocalPlayer();
 		return local == null || local.getName() == null ? "" : clean(local.getName());
-	}
-
-	public List<String> getPartyMembers()
-	{
-		Set<String> names = new LinkedHashSet<>();
-		for (PartyMember member : partyService.getMembers())
-		{
-			if (member.isLoggedIn() && member.getDisplayName() != null && !"<unknown>".equals(member.getDisplayName()))
-			{
-				names.add(clean(member.getDisplayName()));
-			}
-		}
-		return sorted(names);
 	}
 
 	public List<String> getOnlineClanMembers()

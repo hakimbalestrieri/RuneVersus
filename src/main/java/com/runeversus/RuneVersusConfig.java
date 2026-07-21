@@ -4,7 +4,6 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
-import net.runelite.client.config.Range;
 import net.runelite.client.hiscore.HiscoreEndpoint;
 
 @ConfigGroup("runeversus")
@@ -43,8 +42,8 @@ public interface RuneVersusConfig extends Config
 
 	@ConfigItem(
 		keyName = "localOptInSync",
-		name = "CA tier & private data",
-		description = "Reads optional CA tier, PB, and collection-log files from .runelite/rune-versus/sync.",
+		name = "Private comparison data",
+		description = "Reads optional PB, collection-log, and CA tier files for detailed comparisons.",
 		section = comparisonSection,
 		position = 2
 	)
@@ -122,8 +121,8 @@ public interface RuneVersusConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Party & clan",
-		description = "Optional social and right-click features.",
+		name = "Clan",
+		description = "Clan data and optional right-click features.",
 		position = 20,
 		closedByDefault = true
 	)
@@ -154,42 +153,15 @@ public interface RuneVersusConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "partyAnnounceCards",
-		name = "Party announce",
-		description = "Shares duel-card summaries with RuneLite Party members.",
-		section = socialSection,
-		position = 2
-	)
-	default boolean partyAnnounceCards()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "wiseOldManGroupId",
 		name = "WOM group ID",
-		description = "Wise Old Man group used for the clan progress leaders (XP, CLogs, and total boss KC).",
+		description = "Wise Old Man group used for clan progress and the monthly EHP/EHB league.",
 		section = socialSection,
-		position = 3
+		position = 2
 	)
 	default String wiseOldManGroupId()
 	{
 		return "";
 	}
 
-	@Range(
-		min = 2,
-		max = 50
-	)
-	@ConfigItem(
-		keyName = "maxRosterPlayers",
-		name = "Roster limit",
-		description = "Maximum Party or clan players scanned for comparisons and leaderboards.",
-		section = socialSection,
-		position = 4
-	)
-	default int maxRosterPlayers()
-	{
-		return 12;
-	}
 }

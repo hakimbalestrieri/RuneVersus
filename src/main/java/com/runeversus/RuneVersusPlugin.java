@@ -2,15 +2,18 @@ package com.runeversus;
 
 import com.google.inject.Provides;
 import com.runeversus.model.DuelResult;
-import com.runeversus.party.RuneVersusDuelPartyMessage;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.swing.SwingUtilities;
@@ -34,13 +37,10 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.events.PartyChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SkillIconManager;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.menus.MenuManager;
-import net.runelite.client.party.PartyMember;
-import net.runelite.client.party.PartyService;
-import net.runelite.client.party.WSClient;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -49,8 +49,8 @@ import net.runelite.client.util.Text;
 
 @PluginDescriptor(
 	name = "RuneVersus",
-	description = "Generate OSRS duel cards comparing players, party members, and clanmates.",
-	tags = {"hiscore", "compare", "versus", "duel", "party", "clan", "boss", "kc", "xp", "card"},
+	description = "Compare OSRS players and run fair monthly clan leagues with shareable podium cards.",
+	tags = {"hiscore", "compare", "versus", "duel", "clan", "league", "competition", "boss", "kc", "xp", "card"},
 	enabledByDefault = false
 )
 public class RuneVersusPlugin extends Plugin
@@ -59,6 +59,8 @@ public class RuneVersusPlugin extends Plugin
 	private static final String MENU_COMPARE = "VS Compare";
 	private static final String MENU_SET_A = "VS Set A";
 	private static final String MENU_SET_B = "VS Set B";
+	private static final long INCOMING_VS_GLOBAL_COOLDOWN_MILLIS = 8_000L;
+	private static final long INCOMING_VS_SENDER_COOLDOWN_MILLIS = 30_000L;
 
 	@Inject
 	private ClientThread clientThread;
@@ -85,12 +87,6 @@ public class RuneVersusPlugin extends Plugin
 	private CardExporter cardExporter;
 
 	@Inject
-	private PartyService partyService;
-
-	@Inject
-	private WSClient wsClient;
-
-	@Inject
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
@@ -105,11 +101,17 @@ public class RuneVersusPlugin extends Plugin
 	@Inject
 	private ItemManager itemManager;
 
+	@Inject
+	private SpriteManager spriteManager;
+
 	private final Map<Integer, String> playerIndexName = new HashMap<>();
+	private final ConcurrentMap<String, Long> incomingVsBySender = new ConcurrentHashMap<>();
 	private RuneVersusPanel panel;
 	private NavigationButton navButton;
 	private volatile String localPlayerName = "";
 	private volatile DuelResult lastResult;
+	private volatile YearMonth selectedLeagueMonth = YearMonth.now(ZoneOffset.UTC);
+	private long nextIncomingVsAt;
 
 	@Provides
 	RuneVersusConfig provideConfig(ConfigManager configManager)
@@ -120,14 +122,17 @@ public class RuneVersusPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new RuneVersusPanel(new RuneVersusIcons(skillIconManager, itemManager));
+		panel = new RuneVersusPanel(new RuneVersusIcons(skillIconManager, itemManager, spriteManager));
 		panel.setCompareCallback(this::compare);
 		panel.setRosterCallback(this::loadRoster);
 		panel.setSocialActionCallback(this::handleSocialAction);
 		panel.setLocalPlayerSupplier(() -> localPlayerName);
 		panel.setExportAgainCallback(this::exportLastCard);
-		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false));
+		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false, true));
 		panel.setClanProgressExportCallback(this::exportClanProgress);
+		panel.setMonthlyLeagueLoadCallback(month -> analyzeMonthlyLeague(month, false));
+		panel.setMonthlyLeagueRefreshCallback(() -> analyzeMonthlyLeague(selectedLeagueMonth, true));
+		panel.setMonthlyLeagueExportCallback(this::exportMonthlyLeague);
 
 		BufferedImage icon = cardRenderer.renderIcon();
 		navButton = NavigationButton.builder()
@@ -138,7 +143,6 @@ public class RuneVersusPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 
-		wsClient.registerMessage(RuneVersusDuelPartyMessage.class);
 		chatCommandManager.registerCommandAsync(VS_COMMAND, this::vsLookup);
 		if (config.playerMenuOptions())
 		{
@@ -151,7 +155,6 @@ public class RuneVersusPlugin extends Plugin
 	protected void shutDown()
 	{
 		chatCommandManager.unregisterCommand(VS_COMMAND);
-		wsClient.unregisterMessage(RuneVersusDuelPartyMessage.class);
 		clientToolbar.removeNavigation(navButton);
 		removePlayerMenuItems();
 		if (panel != null)
@@ -159,6 +162,8 @@ public class RuneVersusPlugin extends Plugin
 			panel.disposeWindows();
 		}
 		playerIndexName.clear();
+		incomingVsBySender.clear();
+		nextIncomingVsAt = 0L;
 		lastResult = null;
 		localPlayerName = "";
 	}
@@ -285,27 +290,6 @@ public class RuneVersusPlugin extends Plugin
 		}
 	}
 
-	@Subscribe
-	public void onPartyChanged(PartyChanged event)
-	{
-		loadRoster(RuneVersusPanel.RosterKind.PARTY);
-	}
-
-	@Subscribe
-	public void onRuneVersusDuelPartyMessage(RuneVersusDuelPartyMessage message)
-	{
-		PartyMember sender = partyService.getMemberById(message.getMemberId());
-		PartyMember local = partyService.getLocalMember();
-		if (sender == null || sender == local)
-		{
-			return;
-		}
-
-		sendChatMessage("[RuneVersus] " + sender.getDisplayName() + " generated "
-			+ message.leftName + " vs " + message.rightName + ": "
-			+ message.leftScore + "-" + message.rightScore + ". " + message.verdict);
-	}
-
 	private void vsLookup(ChatMessage chatMessage, String message)
 	{
 		boolean localCommand = isLocalCommand(chatMessage);
@@ -342,9 +326,42 @@ public class RuneVersusPlugin extends Plugin
 		}
 		else
 		{
+			long retryAfter = reserveIncomingVs(clean(chatMessage.getName()));
+			if (retryAfter > 0L)
+			{
+				setChatCommandResponse(chatMessage,
+					"[RuneVersus] !vs cooling down. Retry in " + retryAfter + "s.");
+				return;
+			}
 			setChatCommandResponse(chatMessage, "[RuneVersus] Fetching " + arguments.left + " vs " + arguments.right + "...");
 			compareForIncomingChat(chatMessage, arguments.left, arguments.right);
 		}
+	}
+
+	private synchronized long reserveIncomingVs(String sender)
+	{
+		long now = System.currentTimeMillis();
+		String key = normalizedChatName(sender);
+		long senderAllowedAt = incomingVsBySender.getOrDefault(key, 0L);
+		long allowedAt = Math.max(nextIncomingVsAt, senderAllowedAt);
+		if (now < allowedAt)
+		{
+			return Math.max(1L, (allowedAt - now + 999L) / 1_000L);
+		}
+
+		nextIncomingVsAt = now + INCOMING_VS_GLOBAL_COOLDOWN_MILLIS;
+		incomingVsBySender.put(key, now + INCOMING_VS_SENDER_COOLDOWN_MILLIS);
+		if (incomingVsBySender.size() > 256)
+		{
+			incomingVsBySender.entrySet().removeIf(entry -> entry.getValue() <= now);
+		}
+		return 0L;
+	}
+
+	private static String normalizedChatName(String name)
+	{
+		String cleaned = clean(name).toLowerCase(java.util.Locale.ROOT);
+		return cleaned.isEmpty() ? "unknown" : cleaned;
 	}
 
 	private void compare(String left, String right)
@@ -412,10 +429,6 @@ public class RuneVersusPlugin extends Plugin
 		panel.showResult(result, exported, verdict);
 		panel.showVersusResult(result, exported, verdict, separateWindow);
 		sendResultMessage(result);
-		if (config.partyAnnounceCards() && partyService.isInParty())
-		{
-			announceToParty(result, verdict);
-		}
 	}
 
 	private void exportLastCard()
@@ -440,18 +453,6 @@ public class RuneVersusPlugin extends Plugin
 		}
 	}
 
-	private void announceToParty(DuelResult result, String verdict)
-	{
-		RuneVersusDuelPartyMessage message = new RuneVersusDuelPartyMessage();
-		message.leftName = result.getLeft().getName();
-		message.rightName = result.getRight().getName();
-		message.winnerName = result.getWinnerName();
-		message.verdict = verdict;
-		message.leftScore = result.getLeftTotalWins();
-		message.rightScore = result.getRightTotalWins();
-		partyService.send(message);
-	}
-
 	private void loadRoster(RuneVersusPanel.RosterKind kind)
 	{
 		if (panel == null)
@@ -465,10 +466,6 @@ public class RuneVersusPlugin extends Plugin
 			String label;
 			switch (kind)
 			{
-				case PARTY:
-					names = rosterService.getPartyMembers();
-					label = "Party";
-					break;
 				case CLAN_ONLINE:
 					names = rosterService.getOnlineClanMembers();
 					label = "Online clan";
@@ -497,11 +494,14 @@ public class RuneVersusPlugin extends Plugin
 		{
 			switch (action)
 			{
+				case MONTHLY_LEAGUE:
+					analyzeMonthlyLeague(YearMonth.now(ZoneOffset.UTC), false);
+					break;
 				case CLAN_PROGRESS:
-					analyzeClanProgress(false);
+					analyzeClanProgress(false, false);
 					break;
 				case CLAN_PROGRESS_CARD:
-					analyzeClanProgress(true);
+					analyzeClanProgress(true, false);
 					break;
 				default:
 					panel.setStatus("Unknown social action.");
@@ -514,12 +514,12 @@ public class RuneVersusPlugin extends Plugin
 		sendChatMessage(RuneVersusChatFormatter.format(result));
 	}
 
-	private void analyzeClanProgress(boolean exportCard)
+	private void analyzeClanProgress(boolean exportCard, boolean forceRefresh)
 	{
 		int groupId = wiseOldManGroupId();
 		if (groupId <= 0)
 		{
-			String message = "Set your WOM group ID in RuneVersus settings > Party & clan first.";
+			String message = "Set your WOM group ID in RuneVersus settings > Clan first.";
 			panel.setStatus(message);
 			if (!exportCard)
 			{
@@ -534,7 +534,7 @@ public class RuneVersusPlugin extends Plugin
 		{
 			panel.showClanProgressLoading("Loading five periods for every WOM clan member...");
 		}
-		versusService.analyzeClanProgress("Clan progress", groupId)
+		versusService.analyzeClanProgress("Clan progress", groupId, forceRefresh)
 			.thenAccept(leaderboard ->
 			{
 				if (leaderboard.getPlayers().isEmpty())
@@ -577,6 +577,62 @@ public class RuneVersusPlugin extends Plugin
 		exportClanProgress(leaderboard, true);
 	}
 
+	private void analyzeMonthlyLeague(YearMonth month, boolean forceRefresh)
+	{
+		int groupId = wiseOldManGroupId();
+		selectedLeagueMonth = month == null ? YearMonth.now(ZoneOffset.UTC) : month;
+		if (groupId <= 0)
+		{
+			String message = "Set your WOM group ID in RuneVersus settings > Clan first.";
+			panel.setStatus(message);
+			panel.showMonthlyLeagueLoading(selectedLeagueMonth, message);
+			panel.showMonthlyLeagueError(message);
+			return;
+		}
+
+		panel.setStatus("Loading the " + selectedLeagueMonth + " monthly league...");
+		panel.showMonthlyLeagueLoading(selectedLeagueMonth,
+			"Calculating fair EHP and EHB scores for WOM group #" + groupId + "...");
+		versusService.analyzeMonthlyLeague(groupId, selectedLeagueMonth, forceRefresh)
+			.thenAccept(season ->
+			{
+				if (season.getStandings().isEmpty())
+				{
+					String message = "No WOM gains were found for " + season.getLabel() + ".";
+					panel.showMonthlyLeagueError(message);
+					panel.setStatus(message);
+					return;
+				}
+				panel.showMonthlyLeague(season);
+				panel.setStatus("Monthly league ready: " + season.getEligibleCount()
+					+ " eligible, " + season.getProvisionalCount() + " provisional.");
+			})
+			.exceptionally(ex ->
+			{
+				String message = "Monthly league failed: " + readableError(ex);
+				panel.showMonthlyLeagueError(message);
+				panel.setStatus(message);
+				return null;
+			});
+	}
+
+	private void exportMonthlyLeague(MonthlyLeagueSeason season)
+	{
+		try
+		{
+			File exported = cardExporter.exportMonthlyLeague(
+				season, config.copyPathToClipboard(), config.cardTheme());
+			panel.showSavedCard(exported);
+			panel.setStatus("Monthly podium card saved: " + exported.getName());
+		}
+		catch (IOException ex)
+		{
+			String message = "Monthly podium export failed: " + ex.getMessage();
+			panel.setStatus(message);
+			panel.showMonthlyLeagueError(message);
+		}
+	}
+
 	private void exportClanProgress(ClanProgressLeaderboard leaderboard, boolean showWindowOnError)
 	{
 		try
@@ -606,6 +662,8 @@ public class RuneVersusPlugin extends Plugin
 	{
 		switch (action)
 		{
+			case MONTHLY_LEAGUE:
+				return "monthly league";
 			case CLAN_PROGRESS:
 				return "Clan member comparison";
 			case CLAN_PROGRESS_CARD:

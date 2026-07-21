@@ -34,17 +34,19 @@ public class RuneVersusPanelTest
 		JButton comparePlayers = button(panel, "Compare players");
 		Assert.assertNotNull(comparePlayers);
 		JButton clanComparison = button(panel, "Clan member comparison");
+		JButton monthlyLeague = button(panel, "Monthly league");
 		JButton exportProgress = button(panel, "Export progress card");
 		Assert.assertNotNull(clanComparison);
+		Assert.assertNotNull(monthlyLeague);
 		Assert.assertNotNull(exportProgress);
 		Assert.assertTrue(clanComparison.isVisible());
+		Assert.assertTrue(monthlyLeague.isVisible());
 		Assert.assertTrue(exportProgress.isVisible());
 		Assert.assertNull(button(panel, "Fight Night"));
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), comparePlayers.getBackground());
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), clanComparison.getBackground());
+		Assert.assertEquals(new java.awt.Color(255, 193, 7), monthlyLeague.getBackground());
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), exportProgress.getBackground());
-		Assert.assertNull(button(panel, "Party & clan tools"));
-
 		SwingUtilities.invokeAndWait(() ->
 		{
 			fields.get(0).setText("Hakim");
@@ -73,7 +75,7 @@ public class RuneVersusPanelTest
 		Assert.assertTrue(useMyName.getWidth() >= 220);
 
 		JTextArea playerHelp = textArea(panelRef.get(),
-			"Type two names, or load players from Party or clan.");
+			"Type two names, or load players from your clan.");
 		JTextArea clanHelp = textArea(panelRef.get(),
 			"Opens a large clan window with five periods, champions, totals, search and ranking filters.");
 		Assert.assertNotNull(playerHelp);

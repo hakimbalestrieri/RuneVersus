@@ -5,6 +5,10 @@ import com.runeversus.model.MetricResult;
 import com.runeversus.model.MetricType;
 import com.runeversus.model.PlayerProfile;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -15,6 +19,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -27,6 +33,7 @@ import net.runelite.client.hiscore.Skill;
 @Singleton
 public class RuneVersusService
 {
+	private static final Duration MONTHLY_LEAGUE_CACHE_TTL = Duration.ofMinutes(30);
 	private static final HiscoreSkill[] PUBLIC_COLLECTION_METRICS = {
 		HiscoreSkill.COLLECTIONS_LOGGED,
 		HiscoreSkill.CLUE_SCROLL_ALL,
@@ -37,20 +44,24 @@ public class RuneVersusService
 
 	private final HiscoreClient hiscoreClient;
 	private final WiseOldManGainsClient wiseOldManGainsClient;
+	private final MonthlyLeagueArchiveStore monthlyLeagueArchiveStore;
 	private final OptInSyncService optInSyncService;
 	private final RuneVersusConfig config;
 	private final ScheduledExecutorService executor;
+	private final ConcurrentMap<String, CachedLeague> monthlyLeagueCache = new ConcurrentHashMap<>();
 
 	@Inject
 	public RuneVersusService(
 		HiscoreClient hiscoreClient,
 		WiseOldManGainsClient wiseOldManGainsClient,
+		MonthlyLeagueArchiveStore monthlyLeagueArchiveStore,
 		OptInSyncService optInSyncService,
 		RuneVersusConfig config,
 		ScheduledExecutorService executor)
 	{
 		this.hiscoreClient = hiscoreClient;
 		this.wiseOldManGainsClient = wiseOldManGainsClient;
+		this.monthlyLeagueArchiveStore = monthlyLeagueArchiveStore;
 		this.optInSyncService = optInSyncService;
 		this.config = config;
 		this.executor = executor;
@@ -77,6 +88,14 @@ public class RuneVersusService
 
 	public CompletableFuture<ClanProgressLeaderboard> analyzeClanProgress(String label, int groupId)
 	{
+		return analyzeClanProgress(label, groupId, false);
+	}
+
+	public CompletableFuture<ClanProgressLeaderboard> analyzeClanProgress(
+		String label,
+		int groupId,
+		boolean forceRefresh)
+	{
 		return CompletableFuture.supplyAsync(() ->
 		{
 			Map<String, String> displayNames = new LinkedHashMap<>();
@@ -85,7 +104,8 @@ public class RuneVersusService
 			{
 				for (GainPeriod period : GainPeriod.values())
 				{
-					Map<String, ClanProgressGains> periodGains = wiseOldManGainsClient.getGroupGains(groupId, period);
+					Map<String, ClanProgressGains> periodGains = wiseOldManGainsClient.getGroupGains(
+						groupId, period, forceRefresh);
 					for (Map.Entry<String, ClanProgressGains> entry : periodGains.entrySet())
 					{
 						String key = normalizedName(entry.getKey());
@@ -108,6 +128,176 @@ public class RuneVersusService
 			players.sort(java.util.Comparator.comparing(ClanProgressPlayer::getName, String.CASE_INSENSITIVE_ORDER));
 			return new ClanProgressLeaderboard(label, groupId, players);
 		}, executor);
+	}
+
+	public CompletableFuture<MonthlyLeagueSeason> analyzeMonthlyLeague(
+		int groupId,
+		YearMonth month,
+		boolean forceRefresh)
+	{
+		if (groupId <= 0 || month == null)
+		{
+			CompletableFuture<MonthlyLeagueSeason> failed = new CompletableFuture<>();
+			failed.completeExceptionally(new IllegalArgumentException("A WOM group and season are required"));
+			return failed;
+		}
+
+		Instant now = Instant.now();
+		String cacheKey = groupId + ":" + month;
+		MonthlyLeagueArchiveStore.Archive archived = monthlyLeagueArchiveStore.load(groupId, month);
+		if (archived != null && archived.isFinalized())
+		{
+			MonthlyLeagueSeason finalSeason = new MonthlyLeagueSeason(
+				groupId, month, archived.getFinalizedAt(), archived.getParticipants(), true);
+			monthlyLeagueCache.put(cacheKey, new CachedLeague(finalSeason, now));
+			return CompletableFuture.completedFuture(finalSeason);
+		}
+		CachedLeague cached = monthlyLeagueCache.get(cacheKey);
+		if (!forceRefresh && cached != null
+			&& Duration.between(cached.cachedAt, now).compareTo(MONTHLY_LEAGUE_CACHE_TTL) < 0)
+		{
+			return CompletableFuture.completedFuture(cached.season);
+		}
+
+		return CompletableFuture.supplyAsync(() ->
+		{
+			Instant fetchedAt = Instant.now();
+			Instant startsAt = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+			Instant seasonEnd = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+			Instant queryEnd = fetchedAt.isBefore(seasonEnd) ? fetchedAt : seasonEnd;
+			if (!queryEnd.isAfter(startsAt))
+			{
+				throw new IllegalStateException("This monthly season has not started yet");
+			}
+			try
+			{
+				MonthlyLeagueArchiveStore.Archive previous = monthlyLeagueArchiveStore.load(groupId, month);
+				if (previous != null && previous.isFinalized())
+				{
+					return new MonthlyLeagueSeason(
+						groupId, month, previous.getFinalizedAt(), previous.getParticipants(), true);
+				}
+				List<MonthlyLeagueParticipant> gains = wiseOldManGainsClient.getMonthlyLeagueGains(
+					groupId, startsAt, queryEnd, forceRefresh);
+				List<MonthlyLeagueMembership> memberships = wiseOldManGainsClient.getGroupMemberships(
+					groupId, forceRefresh);
+				List<MonthlyLeagueParticipant> participants = mergeMonthlyParticipants(
+					startsAt, previous, gains, memberships);
+				boolean finalized = !fetchedAt.isBefore(seasonEnd);
+				Instant frozenAt = previous == null || previous.getFrozenAt() == null
+					? fetchedAt : previous.getFrozenAt();
+				Instant finalizedAt = finalized ? fetchedAt : null;
+				monthlyLeagueArchiveStore.save(
+					groupId, month, frozenAt, finalizedAt, participants);
+				MonthlyLeagueSeason season = new MonthlyLeagueSeason(
+					groupId,
+					month,
+					fetchedAt,
+					participants,
+					finalized);
+				monthlyLeagueCache.put(cacheKey, new CachedLeague(season, fetchedAt));
+				return season;
+			}
+			catch (IOException ex)
+			{
+				throw new IllegalStateException(ex);
+			}
+		}, executor);
+	}
+
+	static List<MonthlyLeagueParticipant> mergeMonthlyParticipants(
+		Instant startsAt,
+		MonthlyLeagueArchiveStore.Archive previous,
+		List<MonthlyLeagueParticipant> gains,
+		List<MonthlyLeagueMembership> memberships)
+	{
+		Instant graceEnd = startsAt.plus(Duration.ofHours(72));
+		Map<String, MonthlyLeagueParticipant> previousByKey = new LinkedHashMap<>();
+		if (previous != null)
+		{
+			for (MonthlyLeagueParticipant participant : previous.getParticipants())
+			{
+				previousByKey.put(participantKey(participant.getPlayerId(), participant.getName()), participant);
+			}
+		}
+
+		Map<String, MonthlyLeagueMembership> membershipsByKey = new LinkedHashMap<>();
+		if (memberships != null)
+		{
+			for (MonthlyLeagueMembership membership : memberships)
+			{
+				membershipsByKey.put(participantKey(membership.getPlayerId(), membership.getName()), membership);
+			}
+		}
+
+		Map<String, MonthlyLeagueParticipant> merged = new LinkedHashMap<>();
+		if (gains != null)
+		{
+			for (MonthlyLeagueParticipant gain : gains)
+			{
+				String key = participantKey(gain.getPlayerId(), gain.getName());
+				MonthlyLeagueParticipant old = previousByKey.remove(key);
+				MonthlyLeagueMembership membership = membershipsByKey.remove(key);
+				Instant joinedAt = old != null && old.getJoinedAt() != null
+					? old.getJoinedAt() : membership == null ? null : membership.getJoinedAt();
+				boolean eligibleAtFreeze;
+				if (old != null)
+				{
+					eligibleAtFreeze = old.isRosterEligible();
+				}
+				else if (previous != null)
+				{
+					eligibleAtFreeze = false;
+				}
+				else
+				{
+					eligibleAtFreeze = joinedAt != null
+						&& gain.getTrackedFrom() != null
+						&& !joinedAt.isAfter(graceEnd)
+						&& !gain.getTrackedFrom().isAfter(graceEnd);
+				}
+				merged.put(key, new MonthlyLeagueParticipant(
+					gain.getPlayerId(),
+					gain.getName(),
+					gain.getAccountType(),
+					gain.getEhpGained(),
+					gain.getEhbGained(),
+					gain.getCollectionsGained(),
+					gain.getTrackedFrom(),
+					gain.getTrackedUntil(),
+					joinedAt,
+					eligibleAtFreeze));
+			}
+		}
+
+		for (Map.Entry<String, MonthlyLeagueParticipant> missing : previousByKey.entrySet())
+		{
+			merged.putIfAbsent(missing.getKey(), missing.getValue());
+		}
+		for (MonthlyLeagueMembership membership : membershipsByKey.values())
+		{
+			String key = participantKey(membership.getPlayerId(), membership.getName());
+			boolean frozenCandidate = previous == null
+				&& membership.getJoinedAt() != null
+				&& !membership.getJoinedAt().isAfter(graceEnd);
+			merged.putIfAbsent(key, new MonthlyLeagueParticipant(
+				membership.getPlayerId(),
+				membership.getName(),
+				membership.getAccountType(),
+				0.0,
+				0.0,
+				0L,
+				null,
+				null,
+				membership.getJoinedAt(),
+				frozenCandidate));
+		}
+		return new ArrayList<>(merged.values());
+	}
+
+	private static String participantKey(long playerId, String name)
+	{
+		return playerId > 0L ? "id:" + playerId : "name:" + normalizedName(name);
 	}
 
 	private PlayerProfile loadProfile(String name) throws IOException
@@ -302,5 +492,17 @@ public class RuneVersusService
 	private static String normalizedName(String name)
 	{
 		return cleanName(name).replace('\u00a0', ' ').toLowerCase(Locale.ROOT);
+	}
+
+	private static final class CachedLeague
+	{
+		private final MonthlyLeagueSeason season;
+		private final Instant cachedAt;
+
+		private CachedLeague(MonthlyLeagueSeason season, Instant cachedAt)
+		{
+			this.season = season;
+			this.cachedAt = cachedAt;
+		}
 	}
 }

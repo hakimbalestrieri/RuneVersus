@@ -13,12 +13,11 @@ public final class RuneVersusChatFormatter
 
 	public static String format(DuelResult result)
 	{
-		MetricResult combatAchievements = result.getCombatAchievementMetric();
 		MetricResult collectionLog = result.getCollectionLogMetric();
 		long xpDifference = result.getLeftTotalXp() - result.getRightTotalXp();
 
-		int leftScore = score(PlayerSide.LEFT, xpDifference, combatAchievements, collectionLog);
-		int rightScore = score(PlayerSide.RIGHT, xpDifference, combatAchievements, collectionLog);
+		int leftScore = score(PlayerSide.LEFT, xpDifference, collectionLog);
+		int rightScore = score(PlayerSide.RIGHT, xpDifference, collectionLog);
 
 		return new StringBuilder("[VS] ")
 			.append(result.getLeft().getName())
@@ -30,8 +29,6 @@ public final class RuneVersusChatFormatter
 			.append(result.getRight().getName())
 			.append(" | XP: ")
 			.append(formatSignedXp(xpDifference))
-			.append(" | CA: ")
-			.append(formatCombatAchievements(combatAchievements))
 			.append(" | CLog: ")
 			.append(formatCollectionLog(collectionLog))
 			.toString();
@@ -40,16 +37,11 @@ public final class RuneVersusChatFormatter
 	private static int score(
 		PlayerSide side,
 		long xpDifference,
-		MetricResult combatAchievements,
 		MetricResult collectionLog)
 	{
 		int score = 0;
 		if ((side == PlayerSide.LEFT && xpDifference > 0)
 			|| (side == PlayerSide.RIGHT && xpDifference < 0))
-		{
-			score++;
-		}
-		if (combatAchievements != null && combatAchievements.getWinner() == side)
 		{
 			score++;
 		}
@@ -82,17 +74,6 @@ public final class RuneVersusChatFormatter
 			return sign + String.format(Locale.ROOT, "%.1fK", absolute / 1_000.0);
 		}
 		return sign + absolute;
-	}
-
-	private static String formatCombatAchievements(MetricResult metric)
-	{
-		if (metric == null)
-		{
-			return "n/a";
-		}
-		return CombatAchievementTier.fromScore(metric.getLeftValue()).getDisplayName()
-			+ " vs "
-			+ CombatAchievementTier.fromScore(metric.getRightValue()).getDisplayName();
 	}
 
 	private static String formatCollectionLog(MetricResult metric)

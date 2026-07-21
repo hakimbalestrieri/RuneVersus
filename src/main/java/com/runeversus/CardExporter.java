@@ -79,6 +79,29 @@ public class CardExporter
 		return out;
 	}
 
+	public File exportMonthlyLeague(
+		MonthlyLeagueSeason season,
+		boolean copyPathToClipboard,
+		RuneVersusCardTheme theme) throws IOException
+	{
+		File dir = new File(RuneLite.RUNELITE_DIR, "rune-versus/cards");
+		if (!dir.exists() && !dir.mkdirs())
+		{
+			throw new IOException("Unable to create export directory: " + dir);
+		}
+
+		String name = "monthly-league-" + season.getMonth() + "-"
+			+ FILE_TIME.format(season.getGeneratedAt()) + ".png";
+		File out = new File(dir, name);
+		ImageIO.write(renderer.renderMonthlyLeague(season, theme), "png", out);
+		if (copyPathToClipboard)
+		{
+			Toolkit.getDefaultToolkit().getSystemClipboard()
+				.setContents(new StringSelection(out.getAbsolutePath()), null);
+		}
+		return out;
+	}
+
 	private static String sanitize(String name)
 	{
 		if (name == null || name.trim().isEmpty())

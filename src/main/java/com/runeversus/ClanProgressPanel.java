@@ -320,6 +320,8 @@ class ClanProgressPanel extends JPanel
 		if (focused)
 		{
 			bossColumnLabel.setText(bossName.toUpperCase(Locale.ROOT) + " KC");
+			bossColumnLabel.setIcon(icons.bossIcon(bossName, 18, bossColumnLabel));
+			bossColumnLabel.setIconTextGap(6);
 			columnHeader.add(bossColumnLabel);
 		}
 		else
@@ -327,6 +329,8 @@ class ClanProgressPanel extends JPanel
 			columnHeader.add(columnLabel("XP", SwingConstants.CENTER));
 			columnHeader.add(columnLabel("CLOGS", SwingConstants.CENTER, CLOG_TOOLTIP));
 			bossColumnLabel.setText("ALL BOSS KC");
+			bossColumnLabel.setIcon(icons.icon(RuneVersusIcons.Kind.PVM, 18, bossColumnLabel));
+			bossColumnLabel.setIconTextGap(6);
 			columnHeader.add(bossColumnLabel);
 		}
 
@@ -422,7 +426,10 @@ class ClanProgressPanel extends JPanel
 			{
 				JLabel label = (JLabel) super.getListCellRendererComponent(
 					list, value, index, isSelected, cellHasFocus);
-				label.setIcon(icons.icon(RuneVersusIcons.Kind.PVM, 18, bossSelector));
+				String bossName = value instanceof String ? (String) value : null;
+				label.setIcon(bossName == null || ALL_BOSSES.equals(bossName)
+					? icons.icon(RuneVersusIcons.Kind.PVM, 18, bossSelector)
+					: icons.bossIcon(bossName, 18, bossSelector));
 				label.setIconTextGap(6);
 				return label;
 			}

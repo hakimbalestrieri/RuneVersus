@@ -9,7 +9,12 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
 import java.io.File;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -24,6 +29,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
@@ -45,6 +51,11 @@ class VersusComparisonPanel extends JPanel
 	private static final Color TEAL = new Color(82, 201, 181);
 	private static final Color RED = new Color(224, 104, 104);
 	private static final Color PURPLE = new Color(174, 140, 245);
+	private static final Color PLAYER_A_BAR = new Color(116, 43, 48);
+	private static final Color PLAYER_B_BAR = new Color(38, 72, 119);
+	private static final Color PLAYER_A_TEXT = new Color(255, 219, 219);
+	private static final Color PLAYER_B_TEXT = new Color(218, 232, 255);
+	private static final Color BAR_TRACK = new Color(24, 24, 24);
 
 	enum Category
 	{
@@ -150,6 +161,15 @@ class VersusComparisonPanel extends JPanel
 		{
 			configureIcons();
 		}
+		else
+		{
+			Font controlFont = FontManager.getRunescapeSmallFont().deriveFont(14f);
+			categorySelector.setFont(controlFont);
+			sortSelector.setFont(controlFont);
+			searchField.setFont(controlFont);
+			exportButton.setFont(FontManager.getRunescapeBoldFont().deriveFont(14f));
+			openCardButton.setFont(controlFont);
+		}
 
 		setLayout(new BorderLayout(0, 8));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -183,8 +203,8 @@ class VersusComparisonPanel extends JPanel
 	{
 		result = null;
 		verdict = "";
-		leftPlayer.setText(playerHtml(leftName, "Loading..."));
-		rightPlayer.setText(playerHtml(rightName, "Loading..."));
+		leftPlayer.setText(playerHtml("PLAYER A", leftName, "Loading...", PLAYER_A_TEXT));
+		rightPlayer.setText(playerHtml("PLAYER B", rightName, "Loading...", PLAYER_B_TEXT));
 		winner.setText("VS");
 		categoryScore.setText("Fetching hiscores and optional recent XP...");
 		sourceStatus.setText("Comparison in progress");
@@ -250,13 +270,13 @@ class VersusComparisonPanel extends JPanel
 		JPanel top = verticalPanel(ColorScheme.DARK_GRAY_COLOR);
 
 		JLabel title = new JLabel("PLAYER COMPARISON", SwingConstants.CENTER);
-		title.setFont(FontManager.getRunescapeBoldFont().deriveFont(22f));
+		title.setFont(FontManager.getRunescapeBoldFont().deriveFont(26f));
 		title.setForeground(ColorScheme.BRAND_ORANGE);
 		title.setAlignmentX(CENTER_ALIGNMENT);
 		top.add(title);
 		top.add(Box.createVerticalStrut(5));
 
-		sourceStatus.setFont(FontManager.getRunescapeSmallFont().deriveFont(12f));
+		sourceStatus.setFont(FontManager.getRunescapeSmallFont().deriveFont(14f));
 		sourceStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sourceStatus.setAlignmentX(CENTER_ALIGNMENT);
 		sourceStatus.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
@@ -272,14 +292,14 @@ class VersusComparisonPanel extends JPanel
 		matchup.setMaximumSize(new Dimension(Integer.MAX_VALUE, 84));
 		configurePlayerLabel(leftPlayer, true);
 		configurePlayerLabel(rightPlayer, true);
-		winner.setFont(FontManager.getRunescapeBoldFont().deriveFont(16f));
+		winner.setFont(FontManager.getRunescapeBoldFont().deriveFont(19f));
 		winner.setForeground(GOLD);
 		matchup.add(leftPlayer);
 		matchup.add(winner);
 		matchup.add(rightPlayer);
 		top.add(matchup);
 
-		categoryScore.setFont(FontManager.getRunescapeSmallFont().deriveFont(12f));
+		categoryScore.setFont(FontManager.getRunescapeSmallFont().deriveFont(14f));
 		categoryScore.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		categoryScore.setAlignmentX(CENTER_ALIGNMENT);
 		categoryScore.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
@@ -297,7 +317,7 @@ class VersusComparisonPanel extends JPanel
 		top.add(Box.createVerticalStrut(12));
 
 		JLabel highlightHeading = new JLabel("HIGHLIGHTS");
-		highlightHeading.setFont(FontManager.getRunescapeBoldFont().deriveFont(15f));
+		highlightHeading.setFont(FontManager.getRunescapeBoldFont().deriveFont(17f));
 		highlightHeading.setForeground(Color.WHITE);
 		highlightHeading.setAlignmentX(LEFT_ALIGNMENT);
 		top.add(highlightHeading);
@@ -394,7 +414,7 @@ class VersusComparisonPanel extends JPanel
 		metricList.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		metricList.setForeground(Color.WHITE);
 		metricList.setSelectionBackground(ColorScheme.MEDIUM_GRAY_COLOR);
-		metricList.setFixedCellHeight(spaciousLayout ? 88 : 70);
+		metricList.setFixedCellHeight(spaciousLayout ? 108 : 84);
 		metricList.setCellRenderer(new MetricRenderer());
 		JScrollPane scroll = new JScrollPane(metricList);
 		scroll.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
@@ -404,9 +424,9 @@ class VersusComparisonPanel extends JPanel
 		JPanel header = new JPanel(new BorderLayout());
 		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		JLabel title = new JLabel("Comparisons");
-		title.setFont(FontManager.getRunescapeBoldFont());
+		title.setFont(FontManager.getRunescapeBoldFont().deriveFont(spaciousLayout ? 17f : 14f));
 		title.setForeground(Color.WHITE);
-		visibleMetrics.setFont(FontManager.getRunescapeSmallFont());
+		visibleMetrics.setFont(FontManager.getRunescapeSmallFont().deriveFont(spaciousLayout ? 14f : 12f));
 		visibleMetrics.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		header.add(title, BorderLayout.WEST);
 		header.add(visibleMetrics, BorderLayout.EAST);
@@ -425,8 +445,9 @@ class VersusComparisonPanel extends JPanel
 			JPanel actions = new JPanel(new GridLayout(1, 2, 8, 0));
 			actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
 			actions.setAlignmentX(CENTER_ALIGNMENT);
-			actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+			actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
 			JButton back = new JButton(backButtonText);
+			back.setFont(FontManager.getRunescapeBoldFont().deriveFont(14f));
 			back.addActionListener(e -> backCallback.run());
 			actions.add(back);
 			actions.add(exportButton);
@@ -463,11 +484,11 @@ class VersusComparisonPanel extends JPanel
 			BorderFactory.createMatteBorder(3, 0, 0, 0, accent),
 			BorderFactory.createEmptyBorder(8, 10, 8, 10)));
 		JLabel heading = new JLabel(title, SwingConstants.CENTER);
-		heading.setFont(FontManager.getRunescapeBoldFont().deriveFont(13f));
+		heading.setFont(FontManager.getRunescapeBoldFont().deriveFont(15f));
 		heading.setForeground(accent);
 		icons.apply(heading, iconKind, 20);
 		value.setHorizontalAlignment(SwingConstants.CENTER);
-		value.setFont(FontManager.getRunescapeBoldFont().deriveFont(13f));
+		value.setFont(FontManager.getRunescapeBoldFont().deriveFont(15f));
 		value.setForeground(Color.WHITE);
 		card.add(heading, BorderLayout.NORTH);
 		card.add(value, BorderLayout.CENTER);
@@ -552,8 +573,8 @@ class VersusComparisonPanel extends JPanel
 
 		String leftName = result.getLeft().getName();
 		String rightName = result.getRight().getName();
-		leftPlayer.setText(playerHtml(leftName, result.getLeftTotalWins() + " wins"));
-		rightPlayer.setText(playerHtml(rightName, result.getRightTotalWins() + " wins"));
+		leftPlayer.setText(playerHtml("PLAYER A", leftName, result.getLeftTotalWins() + " wins", PLAYER_A_TEXT));
+		rightPlayer.setText(playerHtml("PLAYER B", rightName, result.getRightTotalWins() + " wins", PLAYER_B_TEXT));
 		if ("Tie".equals(result.getWinnerName()))
 		{
 			winner.setText("TIE");
@@ -739,12 +760,12 @@ class VersusComparisonPanel extends JPanel
 		}
 	}
 
-	private static JPanel fieldRow(String labelText, Component field)
+	private JPanel fieldRow(String labelText, Component field)
 	{
 		return fieldRow(labelText, field, 53, 29);
 	}
 
-	private static JPanel fieldRow(String labelText, Component field, int labelWidth, int height)
+	private JPanel fieldRow(String labelText, Component field, int labelWidth, int height)
 	{
 		JPanel row = new JPanel(new BorderLayout(7, 0));
 		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -753,7 +774,7 @@ class VersusComparisonPanel extends JPanel
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
 		JLabel label = new JLabel(labelText);
 		label.setPreferredSize(new Dimension(labelWidth, height - 2));
-		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setFont(FontManager.getRunescapeSmallFont().deriveFont(spaciousLayout ? 14f : 12f));
 		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		row.add(label, BorderLayout.WEST);
 		row.add(field, BorderLayout.CENTER);
@@ -763,8 +784,8 @@ class VersusComparisonPanel extends JPanel
 	private static void configurePlayerLabel(JLabel label, boolean spacious)
 	{
 		label.setFont(spacious
-			? FontManager.getRunescapeBoldFont().deriveFont(15f)
-			: FontManager.getRunescapeSmallFont());
+			? FontManager.getRunescapeBoldFont().deriveFont(18f)
+			: FontManager.getRunescapeSmallFont().deriveFont(13f));
 		label.setForeground(Color.WHITE);
 	}
 
@@ -785,9 +806,10 @@ class VersusComparisonPanel extends JPanel
 		return panel;
 	}
 
-	private static String playerHtml(String name, String score)
+	private static String playerHtml(String side, String name, String score, Color color)
 	{
-		return "<html><center><b>" + escapeHtml(name) + "</b><br><font color='#b8b8b8'>"
+		return "<html><center><font color='" + htmlColor(color) + "'><b>" + escapeHtml(side)
+			+ " | " + escapeHtml(name) + "</b></font><br><font color='#b8b8b8'>"
 			+ escapeHtml(score) + "</font></center></html>";
 	}
 
@@ -797,33 +819,61 @@ class VersusComparisonPanel extends JPanel
 		{
 			return CombatAchievementTier.fromScore(value).getDisplayName();
 		}
-		return RuneVersusFlavor.format(value);
+		String formatted = RuneVersusFlavor.format(value);
+		switch (metric.getType())
+		{
+			case SKILL:
+			case FORM_DAY:
+			case FORM_WEEK:
+			case FORM_MONTH:
+				return formatted + " XP";
+			case BOSS:
+				return formatted + " KC";
+			case COLLECTION_LOG:
+				return formatted + " CLogs";
+			case PERSONAL_BEST:
+				return formatted + "s";
+			case ACTIVITY:
+			default:
+				return formatted;
+		}
 	}
 
-	private static String gapValue(MetricResult metric)
+	static double leftShare(MetricResult metric)
 	{
-		if (metric.getWinner() == PlayerSide.TIE)
+		double left = Math.max(0.0, metric.getLeftValue());
+		double right = Math.max(0.0, metric.getRightValue());
+		if (left + right == 0.0)
 		{
-			return "Tie";
+			return 0.5;
 		}
-		if (metric.getType() == MetricType.COMBAT_ACHIEVEMENTS)
-		{
-			return metric.getGap() + (metric.getGap() == 1L ? " tier" : " tiers");
-		}
-		return "Gap " + RuneVersusFlavor.format(metric.getGap());
+		// Personal-best times are the inverse case: the lower value must own the
+		// larger visual share so the bar always points to the actual winner.
+		return metric.isLowerIsBetter() ? right / (left + right) : left / (left + right);
+	}
+
+	private static String shareText(double share)
+	{
+		return String.format(Locale.ROOT, "%.1f%%", share * 100.0);
 	}
 
 	private String metricLeadText(MetricResult metric)
 	{
 		if (metric.getWinner() == PlayerSide.TIE)
 		{
-			return "Tied";
+			return "Tie | 50.0% each";
 		}
 		String leader = metric.getWinner() == PlayerSide.LEFT
 			? result.getLeft().getName() : result.getRight().getName();
-		String gap = metric.getType() == MetricType.COMBAT_ACHIEVEMENTS
-			? metric.getGap() + (metric.getGap() == 1L ? " tier" : " tiers")
-			: RuneVersusFlavor.format(metric.getGap());
+		String gap;
+		if (metric.getType() == MetricType.COMBAT_ACHIEVEMENTS)
+		{
+			gap = metric.getGap() + (metric.getGap() == 1L ? " tier" : " tiers");
+		}
+		else
+		{
+			gap = metricValue(metric, metric.getGap());
+		}
 		return leader + " leads by " + gap;
 	}
 
@@ -869,19 +919,24 @@ class VersusComparisonPanel extends JPanel
 		}
 	}
 
-	private final class MetricRenderer extends JLabel implements ListCellRenderer<DisplayMetric>
+	private final class MetricRenderer extends JPanel implements ListCellRenderer<DisplayMetric>
 	{
+		private DisplayMetric display;
+		private Icon icon;
+		private boolean selected;
+		private final Font titleFont;
+		private final Font valueFont;
+		private final Font leadFont;
+
 		private MetricRenderer()
 		{
-			setOpaque(true);
-			setVerticalAlignment(SwingConstants.CENTER);
-			setFont(spaciousLayout
-				? FontManager.getRunescapeSmallFont().deriveFont(13f)
-				: FontManager.getRunescapeSmallFont());
-			setForeground(Color.WHITE);
+			setOpaque(false);
+			titleFont = FontManager.getRunescapeBoldFont().deriveFont(spaciousLayout ? 17f : 14f);
+			valueFont = FontManager.getRunescapeBoldFont().deriveFont(spaciousLayout ? 16f : 13f);
+			leadFont = FontManager.getRunescapeBoldFont().deriveFont(spaciousLayout ? 15f : 12f);
 			setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR),
-				BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+				BorderFactory.createEmptyBorder(3, 8, 3, 8)));
 		}
 
 		@Override
@@ -892,12 +947,132 @@ class VersusComparisonPanel extends JPanel
 			boolean isSelected,
 			boolean cellHasFocus)
 		{
-			setBackground(isSelected ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR);
-			setIcon(icons.metricIcon(display.metric, display.name, 22, list));
-			setIconTextGap(8);
-			int tableWidth = Math.max(245, list.getWidth() - (getIcon() == null ? 32 : 62));
-			setText(metricHtml(display, tableWidth));
+			this.display = display;
+			this.selected = isSelected;
+			this.icon = icons.metricIcon(display.metric, display.name, spaciousLayout ? 24 : 20, list);
 			return this;
+		}
+
+		@Override
+		protected void paintComponent(Graphics graphics)
+		{
+			Graphics2D g = (Graphics2D) graphics.create();
+			try
+			{
+				g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g.setColor(selected ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR);
+				g.fillRect(0, 0, getWidth(), getHeight());
+				if (display == null)
+				{
+					return;
+				}
+
+				int horizontalInset = spaciousLayout ? 12 : 7;
+				int titleHeight = spaciousLayout ? 34 : 27;
+				int barX = horizontalInset;
+				int barY = titleHeight;
+				int barWidth = Math.max(1, getWidth() - horizontalInset * 2);
+				int barHeight = Math.max(1, getHeight() - titleHeight - (spaciousLayout ? 10 : 7));
+				int arc = spaciousLayout ? 12 : 8;
+				double leftShare = leftShare(display.metric);
+				int split = (int) Math.round(barWidth * leftShare);
+
+				g.setColor(BAR_TRACK);
+				g.fillRoundRect(barX, barY, barWidth, barHeight, arc, arc);
+				Graphics2D leftGraphics = (Graphics2D) g.create();
+				leftGraphics.clipRect(barX, barY, split, barHeight);
+				leftGraphics.setColor(PLAYER_A_BAR);
+				leftGraphics.fillRoundRect(barX, barY, barWidth, barHeight, arc, arc);
+				leftGraphics.dispose();
+				Graphics2D rightGraphics = (Graphics2D) g.create();
+				rightGraphics.clipRect(barX + split, barY, barWidth - split, barHeight);
+				rightGraphics.setColor(PLAYER_B_BAR);
+				rightGraphics.fillRoundRect(barX, barY, barWidth, barHeight, arc, arc);
+				rightGraphics.dispose();
+				g.setColor(new Color(255, 255, 255, 48));
+				g.drawRoundRect(barX, barY, barWidth - 1, barHeight - 1, arc, arc);
+				g.setColor(new Color(255, 255, 255, 90));
+				g.drawLine(barX + split, barY + 4, barX + split, barY + barHeight - 5);
+
+				drawTitle(g);
+				drawValues(g, barX, barY, barWidth, barHeight, leftShare);
+			}
+			finally
+			{
+				g.dispose();
+			}
+		}
+
+		private void drawTitle(Graphics2D g)
+		{
+			g.setFont(titleFont);
+			FontMetrics metrics = g.getFontMetrics();
+			int iconWidth = icon == null ? 0 : icon.getIconWidth() + 7;
+			int titleWidth = metrics.stringWidth(display.name);
+			int groupX = Math.max(8, (getWidth() - titleWidth - iconWidth) / 2);
+			if (icon != null)
+			{
+				icon.paintIcon(this, g, groupX, Math.max(2, (34 - icon.getIconHeight()) / 2));
+			}
+			g.setColor(Color.WHITE);
+			g.drawString(display.name, groupX + iconWidth, spaciousLayout ? 23 : 19);
+		}
+
+		private void drawValues(
+			Graphics2D g,
+			int barX,
+			int barY,
+			int barWidth,
+			int barHeight,
+			double leftShare)
+		{
+			String leftName = result == null ? "Player A" : result.getLeft().getName();
+			String rightName = result == null ? "Player B" : result.getRight().getName();
+			String leftText = leftName + "  " + metricValue(display.metric, display.metric.getLeftValue())
+				+ "  |  " + shareText(leftShare);
+			String rightText = shareText(1.0 - leftShare) + "  |  "
+				+ metricValue(display.metric, display.metric.getRightValue()) + "  " + rightName;
+
+			g.setFont(valueFont);
+			FontMetrics valueMetrics = g.getFontMetrics();
+			int textLimit = spaciousLayout
+				? Math.max(90, (int) (barWidth * 0.29))
+				: Math.max(90, (barWidth - 46) / 2);
+			leftText = fit(leftText, valueMetrics, textLimit);
+			rightText = fit(rightText, valueMetrics, textLimit);
+			int centerY = barY + barHeight / 2;
+			int valueY = spaciousLayout
+				? centerY + (valueMetrics.getAscent() - valueMetrics.getDescent()) / 2
+				: barY + Math.max(valueMetrics.getAscent() + 6, barHeight / 2 - 2);
+			g.setColor(PLAYER_A_TEXT);
+			g.drawString(leftText, barX + 12, valueY);
+			g.setColor(PLAYER_B_TEXT);
+			g.drawString(rightText, barX + barWidth - 12 - valueMetrics.stringWidth(rightText), valueY);
+
+			String lead = metricLeadText(display.metric);
+			g.setFont(leadFont);
+			FontMetrics leadMetrics = g.getFontMetrics();
+			lead = fit(lead, leadMetrics, spaciousLayout ? (int) (barWidth * 0.38) : barWidth - 24);
+			g.setColor(display.metric.getWinner() == PlayerSide.TIE ? SILVER : GOLD);
+			g.drawString(lead, barX + (barWidth - leadMetrics.stringWidth(lead)) / 2,
+				spaciousLayout
+					? centerY + (leadMetrics.getAscent() - leadMetrics.getDescent()) / 2
+					: barY + barHeight - 8);
+		}
+
+		private String fit(String text, FontMetrics metrics, int width)
+		{
+			if (metrics.stringWidth(text) <= width)
+			{
+				return text;
+			}
+			String suffix = "...";
+			int end = text.length();
+			while (end > 0 && metrics.stringWidth(text.substring(0, end) + suffix) > width)
+			{
+				end--;
+			}
+			return text.substring(0, end) + suffix;
 		}
 	}
 }

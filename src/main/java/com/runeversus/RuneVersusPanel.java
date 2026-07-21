@@ -9,6 +9,7 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.io.File;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -42,7 +43,6 @@ public class RuneVersusPanel extends PluginPanel
 
 	enum RosterKind
 	{
-		PARTY("Party"),
 		CLAN_ONLINE("Online clan"),
 		CLAN_ALL("All clan members");
 
@@ -62,6 +62,7 @@ public class RuneVersusPanel extends PluginPanel
 
 	enum SocialAction
 	{
+		MONTHLY_LEAGUE,
 		CLAN_PROGRESS,
 		CLAN_PROGRESS_CARD
 	}
@@ -79,9 +80,11 @@ public class RuneVersusPanel extends PluginPanel
 	private final CardLayout pageLayout = new CardLayout();
 	private final JPanel mainPage = new JPanel();
 	private final ClanProgressPanel clanProgressPanel;
+	private final MonthlyLeaguePanel monthlyLeaguePanel;
 	private final VersusComparisonPanel sidebarVersusPanel;
 	private final VersusComparisonPanel windowVersusPanel;
 	private JFrame clanWindow;
+	private JFrame leagueWindow;
 	private JFrame versusWindow;
 
 	private BiConsumer<String, String> compareCallback;
@@ -91,6 +94,9 @@ public class RuneVersusPanel extends PluginPanel
 	private Runnable exportAgainCallback;
 	private Runnable clanProgressRefreshCallback;
 	private Consumer<ClanProgressLeaderboard> clanProgressExportCallback;
+	private Consumer<YearMonth> monthlyLeagueLoadCallback;
+	private Runnable monthlyLeagueRefreshCallback;
+	private Consumer<MonthlyLeagueSeason> monthlyLeagueExportCallback;
 	private volatile File exportedCard;
 
 	RuneVersusPanel()
@@ -147,6 +153,30 @@ public class RuneVersusPanel extends PluginPanel
 			},
 			this::openSavedCard,
 			icons);
+		monthlyLeaguePanel = new MonthlyLeaguePanel(
+			this::hideLeagueWindow,
+			month ->
+			{
+				if (monthlyLeagueLoadCallback != null)
+				{
+					monthlyLeagueLoadCallback.accept(month);
+				}
+			},
+			() ->
+			{
+				if (monthlyLeagueRefreshCallback != null)
+				{
+					monthlyLeagueRefreshCallback.run();
+				}
+			},
+			league ->
+			{
+				if (monthlyLeagueExportCallback != null)
+				{
+					monthlyLeagueExportCallback.accept(league);
+				}
+			},
+			this::openSavedCard);
 		sidebarVersusPanel = new VersusComparisonPanel(
 			"Back",
 			this::showMainPage,
@@ -210,6 +240,21 @@ public class RuneVersusPanel extends PluginPanel
 	void setClanProgressExportCallback(Consumer<ClanProgressLeaderboard> callback)
 	{
 		this.clanProgressExportCallback = callback;
+	}
+
+	void setMonthlyLeagueLoadCallback(Consumer<YearMonth> callback)
+	{
+		this.monthlyLeagueLoadCallback = callback;
+	}
+
+	void setMonthlyLeagueRefreshCallback(Runnable callback)
+	{
+		this.monthlyLeagueRefreshCallback = callback;
+	}
+
+	void setMonthlyLeagueExportCallback(Consumer<MonthlyLeagueSeason> callback)
+	{
+		this.monthlyLeagueExportCallback = callback;
 	}
 
 	void setStatus(String message)
@@ -355,6 +400,11 @@ public class RuneVersusPanel extends PluginPanel
 				clanWindow.dispose();
 				clanWindow = null;
 			}
+			if (leagueWindow != null)
+			{
+				leagueWindow.dispose();
+				leagueWindow = null;
+			}
 			if (versusWindow != null)
 			{
 				versusWindow.dispose();
@@ -370,6 +420,7 @@ public class RuneVersusPanel extends PluginPanel
 			exportedCard = exported;
 			openCardButton.setVisible(exported != null);
 			clanProgressPanel.setExportedCard(exported);
+			monthlyLeaguePanel.setExportedCard(exported);
 			sidebarVersusPanel.setExportedCard(exported);
 			windowVersusPanel.setExportedCard(exported);
 			revalidate();
@@ -401,6 +452,33 @@ public class RuneVersusPanel extends PluginPanel
 		{
 			clanProgressPanel.setError(message);
 			showClanWindow();
+		});
+	}
+
+	void showMonthlyLeague(MonthlyLeagueSeason season)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			monthlyLeaguePanel.setSeason(season);
+			showLeagueWindow();
+		});
+	}
+
+	void showMonthlyLeagueLoading(YearMonth month, String message)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			monthlyLeaguePanel.setLoading(month, message);
+			showLeagueWindow();
+		});
+	}
+
+	void showMonthlyLeagueError(String message)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			monthlyLeaguePanel.setError(message);
+			showLeagueWindow();
 		});
 	}
 
@@ -465,6 +543,19 @@ public class RuneVersusPanel extends PluginPanel
 		}
 	}
 
+	private void hideLeagueWindow()
+	{
+		if (!SwingUtilities.isEventDispatchThread())
+		{
+			SwingUtilities.invokeLater(this::hideLeagueWindow);
+			return;
+		}
+		if (leagueWindow != null)
+		{
+			leagueWindow.setVisible(false);
+		}
+	}
+
 	private void showClanWindow()
 	{
 		if (clanWindow == null)
@@ -482,12 +573,29 @@ public class RuneVersusPanel extends PluginPanel
 		clanWindow.requestFocus();
 	}
 
+	private void showLeagueWindow()
+	{
+		if (leagueWindow == null)
+		{
+			leagueWindow = new JFrame("RuneVersus — Monthly league");
+			leagueWindow.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+			leagueWindow.setContentPane(monthlyLeaguePanel);
+			leagueWindow.setMinimumSize(new Dimension(980, 700));
+			leagueWindow.setSize(1180, 860);
+			leagueWindow.setLocationByPlatform(true);
+		}
+		leagueWindow.setVisible(true);
+		leagueWindow.setExtendedState(leagueWindow.getExtendedState() & ~JFrame.ICONIFIED);
+		leagueWindow.toFront();
+		leagueWindow.requestFocus();
+	}
+
 	private JPanel buildPlayersPanel()
 	{
 		JPanel panel = cardPanel();
 		panel.add(sectionTitle("Players"));
 		panel.add(Box.createVerticalStrut(3));
-		panel.add(infoLabel("Type two names, or load players from Party or clan."));
+		panel.add(infoLabel("Type two names, or load players from your clan."));
 		panel.add(Box.createVerticalStrut(7));
 		panel.add(fieldRow("Player 1", leftPlayer));
 		panel.add(Box.createVerticalStrut(3));
@@ -505,12 +613,12 @@ public class RuneVersusPanel extends PluginPanel
 		panel.add(me);
 		panel.add(Box.createVerticalStrut(12));
 
-		panel.add(subsectionTitle("Load Party or clan"));
+		panel.add(subsectionTitle("Load clan members"));
 		panel.add(Box.createVerticalStrut(3));
 		panel.add(fieldRow("Player list", rosterKind));
 		panel.add(Box.createVerticalStrut(4));
 		JButton loadPlayers = fullWidthButton("Load player list");
-		loadPlayers.setToolTipText("Makes Party or clan names selectable in the two fields above");
+		loadPlayers.setToolTipText("Makes clan member names selectable in the two fields above");
 		loadPlayers.addActionListener(e -> loadSelectedRoster());
 		panel.add(loadPlayers);
 		panel.add(Box.createVerticalStrut(5));
@@ -538,6 +646,10 @@ public class RuneVersusPanel extends PluginPanel
 		panel.add(toolsOutputScroll);
 		panel.add(Box.createVerticalStrut(8));
 
+		addTool(panel,
+			"Monthly league",
+			"Live monthly podium using fair EHP and EHB scores, with a separate Collection spotlight.",
+			SocialAction.MONTHLY_LEAGUE);
 		addTool(panel,
 			"Clan member comparison",
 			"Opens a large clan window with five periods, champions, totals, search and ranking filters.",
