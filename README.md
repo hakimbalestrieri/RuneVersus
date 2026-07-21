@@ -3,7 +3,7 @@
 RuneVersus turns OSRS account comparison into shareable duel cards, clan recaps,
 and quick chat results.
 
-Compare yourself, two typed RSNs, Party members, clanmates, or players mentioned
+Compare yourself, two typed RSNs, clanmates, or players mentioned
 through chat commands. RuneVersus scores public hiscore data, highlights close
 categories, and exports polished 16:9 PNG cards for Discord, Twitter, clan channels,
 and stream overlays.
@@ -15,30 +15,38 @@ and stream overlays.
 - Use `!vs <player1> <player2>` to compare two named players.
 - Use commas or quotes for names with spaces, e.g. `!vs Zezima, Lynx Titan`.
 - Display incoming `!vs` commands from public, private, friends chat, clan,
-  guest clan, GIM, or Party chat as local text results.
+  guest clan, or GIM as local text results.
 - Compare skill XP, boss KC, clue and activity scores, and public collection-log
   count from official OSRS hiscores.
 - Optionally add 24h, week, and month XP gains through Wise Old Man.
 - Show the closest category, such as the KC or XP needed to take the lead.
 - Show a biggest-flex highlight for the largest account gap.
-- Pick players directly from your RuneLite Party.
 - Pick online or full members from your clan channel.
 - Right-click visible players to run `VS Compare`; optional clan-list shortcuts provide `VS Set A` and `VS Set B`.
 - Export a duel-card PNG after comparisons.
 - Rank the clan's XP, collection-log, and summed boss-KC values over 24 hours,
   one week, one month, one year, and all-time.
+- Run an automatic calendar-month clan league using fair EHP and EHB rankings,
+  live podiums, twelve browsable seasons, and a separate Collection spotlight.
+- Exclude late-tracked members from competitive ranks while keeping their gains
+  visible as provisional data.
 - Export the 15 clan progress leaders as one shareable 16:9 PNG card.
+- Export the live or final monthly podium as an OSRS-style 16:9 PNG card.
 - Copy the saved PNG path to the clipboard after export.
 - Choose card styles: Auto, PvM, Skilling, Ironman, Clan War, or Underdog.
 - Choose verdict tone: Serious, Fun, or Savage.
 - Optionally open the detailed two-player Versus view in the RuneLite side panel.
-- Announce duel summaries to RuneLite Party members.
 - Import optional local PB and detailed collection-log data when both players opt in.
 
 ## Social Modes
 
 RuneVersus includes social tools from the side panel:
 
+- Monthly League: opens a large competitive window for the configured WOM group.
+  The overall score is 50% clan-relative EHP rank and 50% clan-relative EHB rank.
+  CLogs have their own podium and never affect the overall result. Seasons reset
+  automatically at 00:00 UTC on the first day of each month; the previous eleven
+  months remain selectable.
 - Clan Member Comparison: opens a large, independent window containing every
   member of the configured Wise Old Man group. Switch between 24h, week, month,
   year, and all-time totals;
@@ -55,15 +63,15 @@ The config is intentionally grouped into three simple sections:
   import. `Open comparison window` is on by default; disable it to keep the
   full Versus side-panel view with scores, highlights, filters, and every compared metric.
 - Card export: PNG export, clipboard copy, card style, and verdict tone.
-- Party & clan: right-click player menus, optional clan `VS Set` shortcuts, Party
-  announcements, Wise Old Man group ID, and roster scan limit.
+- Clan: right-click player menus, optional clan `VS Set` shortcuts, and the Wise
+  Old Man group ID.
 
-Card export and Party & clan settings are collapsed by default. The side panel
-starts with only two player fields and one Compare button; Party, clan, and
-social tools are available under More options.
+Card export and Clan settings are collapsed by default. The side panel starts
+with only two player fields and one Compare button; clan tools remain directly
+available below the comparison controls.
 
 The default settings are designed for quick testing: cards auto-save, PNG paths
-are copied, right-click player menus are enabled, and Party announcements are on.
+are copied, and right-click player menus are enabled.
 
 ## Data And Privacy
 
@@ -75,6 +83,14 @@ are copied, right-click player menus are enabled, and Party announcements are on
   page. RuneVersus makes five bulk read-only requests (day, week, month, year,
   and current bulk hiscores); rankings depend on the snapshots available in
   Wise Old Man.
+- Monthly League uses one WOM bulk-gains request with exact calendar start and
+  end dates. Results are cached for 30 minutes. Members whose first usable
+  snapshot is more than 72 hours after the season began are shown as Provisional
+  and cannot enter that month's podium.
+- EHP normalizes skill XP and EHB normalizes boss KC using Wise Old Man's
+  account- and activity-specific efficiency rates. Collection gains remain a
+  separate recognition category because public totals cannot distinguish easy
+  early slots from rare late-game unlocks.
 - Full collection log and boss personal best times are not public for arbitrary
   players.
 - Local opt-in sync reads Combat Achievement tiers, private PB, and collection
@@ -94,10 +110,9 @@ pb.Tombs_of_Amascut=1218
 personalBest.Zulrah=48
 ```
 
-Compact chat comparisons use three equally weighted categories: total skill XP,
-Combat Achievement tier, and public collection-log count. Combat Achievement
-tiers are not available from public hiscores, so that category displays `n/a`
-and is not scored unless both players provide it through local opt-in data.
+Compact `!vs` chat comparisons use two equally weighted categories: total skill
+XP and public collection-log count. Combat Achievement tiers remain available
+only inside detailed comparisons when both players provide local opt-in data.
 
 ## Export Location
 

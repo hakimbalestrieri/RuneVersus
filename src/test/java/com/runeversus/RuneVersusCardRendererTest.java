@@ -68,4 +68,14 @@ public class RuneVersusCardRendererTest
 		Assert.assertEquals(675, image.getHeight());
 		Assert.assertNotEquals(image.getRGB(0, 0), image.getRGB(346, 180));
 	}
+
+	@Test
+	public void rendersNonBlankMonthlyLeagueCard()
+	{
+		BufferedImage image = new RuneVersusCardRenderer().renderMonthlyLeague(
+			MonthlyLeaguePanelTest.sampleSeason(), RuneVersusCardTheme.CLAN_WAR);
+		Assert.assertEquals(1200, image.getWidth());
+		Assert.assertEquals(675, image.getHeight());
+		Assert.assertNotEquals(image.getRGB(0, 0), image.getRGB(600, 220));
+	}
 }

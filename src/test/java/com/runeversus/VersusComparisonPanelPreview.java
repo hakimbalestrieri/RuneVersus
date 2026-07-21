@@ -27,8 +27,8 @@ public class VersusComparisonPanelPreview
 			{
 				VersusComparisonPanel panel = new VersusComparisonPanel(
 					"Close", () -> { }, () -> { }, () -> { });
-				panel.setResult(sampleResult(), null, "Raid Captain edges the all-around clash.");
-				panel.selectCategory(VersusComparisonPanel.Category.RECENT_XP);
+				panel.setResult(sampleResult(), null, "Elyas5 takes the overall lead.");
+				panel.selectCategory(VersusComparisonPanel.Category.SKILLS);
 				panel.setSize(1000, 820);
 				layout(panel);
 				BufferedImage image = new BufferedImage(1000, 820, BufferedImage.TYPE_INT_ARGB);
@@ -58,12 +58,13 @@ public class VersusComparisonPanelPreview
 		List<MetricResult> skills = new ArrayList<>();
 		for (int i = 0; i < names.length; i++)
 		{
-			skills.add(new MetricResult(MetricType.SKILL, names[i],
-				8_000_000L + i * 1_420_000L, 37_000_000L - i * 780_000L));
+			long left = i == 0 ? 35_700_000L : 8_000_000L + i * 1_420_000L;
+			long right = i == 0 ? 59_800_000L : 37_000_000L - i * 780_000L;
+			skills.add(new MetricResult(MetricType.SKILL, names[i], left, right));
 		}
 		return new DuelResult(
-			new PlayerProfile("Raid Captain", null),
-			new PlayerProfile("Clog Hunter", null),
+			new PlayerProfile("TalkMeFrench", null),
+			new PlayerProfile("Elyas5", null),
 			skills,
 			Arrays.asList(
 				new MetricResult(MetricType.BOSS, "Vorkath", 1_284, 927),

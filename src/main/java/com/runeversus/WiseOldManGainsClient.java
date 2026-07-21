@@ -5,6 +5,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -113,6 +116,45 @@ public class WiseOldManGainsClient
 
 			JsonArray root = gson.fromJson(response.body().charStream(), JsonArray.class);
 			return parseGroupGains(root);
+		}
+	}
+
+	public java.util.List<MonthlyLeagueParticipant> getMonthlyLeagueGains(
+		int groupId,
+		Instant startDate,
+		Instant endDate) throws IOException
+	{
+		if (groupId <= 0)
+		{
+			throw new IOException("Wise Old Man group ID must be greater than zero");
+		}
+		if (startDate == null || endDate == null || !endDate.isAfter(startDate))
+		{
+			throw new IOException("Monthly league date range is invalid");
+		}
+
+		HttpUrl url = HttpUrl.parse(GROUPS_BASE_URL + groupId + "/bulk-gained");
+		if (url == null)
+		{
+			throw new IOException("Invalid Wise Old Man group URL");
+		}
+
+		Request request = new Request.Builder()
+			.url(url.newBuilder()
+				.addQueryParameter("startDate", startDate.toString())
+				.addQueryParameter("endDate", endDate.toString())
+				.build())
+			.header("Accept", "application/json")
+			.build();
+
+		try (Response response = okHttpClient.newCall(request).execute())
+		{
+			if (!response.isSuccessful() || response.body() == null)
+			{
+				throw new IOException("Wise Old Man monthly league request failed (HTTP " + response.code() + ")");
+			}
+			JsonArray root = gson.fromJson(response.body().charStream(), JsonArray.class);
+			return parseMonthlyLeagueGains(root);
 		}
 	}
 
@@ -256,6 +298,67 @@ public class WiseOldManGainsClient
 		return totalsByPlayer;
 	}
 
+	static java.util.List<MonthlyLeagueParticipant> parseMonthlyLeagueGains(JsonArray root)
+	{
+		if (root == null)
+		{
+			return Collections.emptyList();
+		}
+
+		java.util.List<MonthlyLeagueParticipant> participants = new ArrayList<>();
+		for (JsonElement element : root)
+		{
+			if (!element.isJsonObject())
+			{
+				continue;
+			}
+			JsonObject entry = element.getAsJsonObject();
+			JsonObject player = object(entry, "player");
+			JsonArray data = entry.has("data") && entry.get("data").isJsonArray()
+				? entry.getAsJsonArray("data") : null;
+			String name = playerName(player);
+			if (name.isEmpty() || data == null)
+			{
+				continue;
+			}
+
+			double ehp = 0.0;
+			double ehb = 0.0;
+			long collections = 0L;
+			for (JsonElement metricElement : data)
+			{
+				if (!metricElement.isJsonObject())
+				{
+					continue;
+				}
+				JsonObject metricData = metricElement.getAsJsonObject();
+				String metric = stringValue(metricData, "metric");
+				if ("ehp".equals(metric))
+				{
+					ehp = Math.max(0.0, doubleValue(metricData, "gained"));
+				}
+				else if ("ehb".equals(metric))
+				{
+					ehb = Math.max(0.0, doubleValue(metricData, "gained"));
+				}
+				else if ("collections_logged".equals(metric))
+				{
+					collections = Math.max(0L, longValue(metricData, "gained"));
+				}
+			}
+
+			participants.add(new MonthlyLeagueParticipant(
+				name,
+				stringValue(player, "type"),
+				ehp,
+				ehb,
+				collections,
+				instantValue(entry, "startDate"),
+				instantValue(entry, "endDate")));
+		}
+		return participants;
+	}
+
 	private static JsonObject object(JsonObject parent, String key)
 	{
 		return parent != null && parent.has(key) && parent.get(key).isJsonObject()
@@ -309,6 +412,39 @@ public class WiseOldManGainsClient
 		catch (NumberFormatException ex)
 		{
 			return 0L;
+		}
+	}
+
+	private static double doubleValue(JsonObject object, String key)
+	{
+		if (object == null || !object.has(key) || object.get(key).isJsonNull())
+		{
+			return 0.0;
+		}
+		try
+		{
+			return object.get(key).getAsDouble();
+		}
+		catch (NumberFormatException ex)
+		{
+			return 0.0;
+		}
+	}
+
+	private static Instant instantValue(JsonObject object, String key)
+	{
+		String value = stringValue(object, key);
+		if (value.isEmpty())
+		{
+			return null;
+		}
+		try
+		{
+			return Instant.parse(value);
+		}
+		catch (DateTimeParseException ex)
+		{
+			return null;
 		}
 	}
 

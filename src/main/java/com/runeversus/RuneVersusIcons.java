@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import javax.swing.Icon;
 import javax.swing.JComponent;
@@ -19,6 +20,9 @@ import net.runelite.api.Skill;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SkillIconManager;
+import net.runelite.client.game.SpriteManager;
+import net.runelite.client.hiscore.HiscoreSkill;
+import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ImageUtil;
 
@@ -37,19 +41,32 @@ final class RuneVersusIcons
 
 	private final SkillIconManager skillIconManager;
 	private final ItemManager itemManager;
+	private final SpriteManager spriteManager;
 	private final Map<Kind, BufferedImage> images = new EnumMap<>(Kind.class);
 	private final Map<Skill, BufferedImage> skillImages = new EnumMap<>(Skill.class);
+	private final Map<HiscoreSkill, BufferedImage> bossImages = new EnumMap<>(HiscoreSkill.class);
+	private final Set<HiscoreSkill> requestedBosses = EnumSet.noneOf(HiscoreSkill.class);
 	private final Map<JComponent, EnumSet<Kind>> repaintTargets = new WeakHashMap<>();
+	private final Map<JComponent, EnumSet<HiscoreSkill>> bossRepaintTargets = new WeakHashMap<>();
 
 	RuneVersusIcons(SkillIconManager skillIconManager, ItemManager itemManager)
 	{
+		this(skillIconManager, itemManager, null);
+	}
+
+	RuneVersusIcons(
+		SkillIconManager skillIconManager,
+		ItemManager itemManager,
+		SpriteManager spriteManager)
+	{
 		this.skillIconManager = skillIconManager;
 		this.itemManager = itemManager;
+		this.spriteManager = spriteManager;
 	}
 
 	static RuneVersusIcons empty()
 	{
-		return new RuneVersusIcons(null, null);
+		return new RuneVersusIcons(null, null, null);
 	}
 
 	void apply(JLabel label, Kind kind, int size)
@@ -80,7 +97,7 @@ final class RuneVersusIcons
 		}
 		if (type == MetricType.BOSS)
 		{
-			return icon(Kind.PVM, size, repaintTarget);
+			return bossIcon(displayName, size, repaintTarget);
 		}
 		if (type == MetricType.COLLECTION_LOG)
 		{
@@ -95,6 +112,41 @@ final class RuneVersusIcons
 			return icon(Kind.XP, size, repaintTarget);
 		}
 		return null;
+	}
+
+	Icon bossIcon(String displayName, int size, JComponent repaintTarget)
+	{
+		HiscoreSkill boss = findBoss(displayName);
+		if (boss == null || spriteManager == null || boss.getSpriteId() < 0)
+		{
+			return icon(Kind.PVM, size, repaintTarget);
+		}
+
+		BufferedImage image;
+		boolean request;
+		synchronized (bossImages)
+		{
+			image = bossImages.get(boss);
+			request = image == null && requestedBosses.add(boss);
+		}
+		registerBossRepaint(boss, repaintTarget);
+		if (request)
+		{
+			spriteManager.getSpriteAsync(boss.getSpriteId(), 0, loaded ->
+			{
+				synchronized (bossImages)
+				{
+					if (loaded == null)
+					{
+						requestedBosses.remove(boss);
+						return;
+					}
+					bossImages.put(boss, loaded);
+				}
+				SwingUtilities.invokeLater(() -> repaintBossTargets(boss));
+			});
+		}
+		return image == null ? icon(Kind.PVM, size, repaintTarget) : new PixelIcon(image, size);
 	}
 
 	private Icon skillIcon(Skill skill, int size)
@@ -169,12 +221,52 @@ final class RuneVersusIcons
 		((AsyncBufferedImage) image).onLoaded(() -> SwingUtilities.invokeLater(target::repaint));
 	}
 
+	private void registerBossRepaint(HiscoreSkill boss, JComponent target)
+	{
+		if (target == null)
+		{
+			return;
+		}
+		synchronized (bossRepaintTargets)
+		{
+			bossRepaintTargets.computeIfAbsent(target, ignored -> EnumSet.noneOf(HiscoreSkill.class))
+				.add(boss);
+		}
+	}
+
+	private void repaintBossTargets(HiscoreSkill boss)
+	{
+		synchronized (bossRepaintTargets)
+		{
+			for (Map.Entry<JComponent, EnumSet<HiscoreSkill>> entry : bossRepaintTargets.entrySet())
+			{
+				if (entry.getValue().contains(boss))
+				{
+					entry.getKey().repaint();
+				}
+			}
+		}
+	}
+
 	private static Skill findSkill(String displayName)
 	{
 		String name = displayName == null ? "" : displayName.trim();
 		for (Skill skill : Skill.values())
 		{
 			if (skill.getName().equalsIgnoreCase(name))
+			{
+				return skill;
+			}
+		}
+		return null;
+	}
+
+	static HiscoreSkill findBoss(String displayName)
+	{
+		String name = displayName == null ? "" : displayName.trim();
+		for (HiscoreSkill skill : HiscoreSkill.values())
+		{
+			if (skill.getType() == HiscoreSkillType.BOSS && skill.getName().equalsIgnoreCase(name))
 			{
 				return skill;
 			}

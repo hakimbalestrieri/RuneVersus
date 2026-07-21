@@ -12,7 +12,7 @@ import org.junit.Test;
 public class RuneVersusChatFormatterTest
 {
 	@Test
-	public void formatsThreeCategoryComparisonOnOneLine()
+	public void formatsXpAndCollectionComparisonOnOneLine()
 	{
 		DuelResult duel = duel(
 			Arrays.asList(
@@ -23,12 +23,12 @@ public class RuneVersusChatFormatterTest
 				new MetricResult(MetricType.COMBAT_ACHIEVEMENTS, "Combat Achievements", 5, 6)));
 
 		Assert.assertEquals(
-			"[VS] Hakim 2-1 Rival | XP: +84.2M | CA: Master vs Grandmaster | CLog: 1,242 vs 1,087",
+			"[VS] Hakim 2-0 Rival | XP: +84.2M | CLog: 1,242 vs 1,087",
 			RuneVersusChatFormatter.format(duel));
 	}
 
 	@Test
-	public void doesNotScoreUnavailableCombatAchievements()
+	public void scoresOnlyXpAndCollectionLog()
 	{
 		DuelResult duel = duel(
 			Collections.singletonList(
@@ -37,7 +37,7 @@ public class RuneVersusChatFormatterTest
 				new MetricResult(MetricType.COLLECTION_LOG, "Collections Logged", 800, 900)));
 
 		Assert.assertEquals(
-			"[VS] Hakim 1-1 Rival | XP: +5.0M | CA: n/a | CLog: 800 vs 900",
+			"[VS] Hakim 1-1 Rival | XP: +5.0M | CLog: 800 vs 900",
 			RuneVersusChatFormatter.format(duel));
 	}
 

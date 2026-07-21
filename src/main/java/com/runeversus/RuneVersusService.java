@@ -5,6 +5,10 @@ import com.runeversus.model.MetricResult;
 import com.runeversus.model.MetricType;
 import com.runeversus.model.PlayerProfile;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -15,6 +19,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -27,6 +33,7 @@ import net.runelite.client.hiscore.Skill;
 @Singleton
 public class RuneVersusService
 {
+	private static final Duration MONTHLY_LEAGUE_CACHE_TTL = Duration.ofMinutes(30);
 	private static final HiscoreSkill[] PUBLIC_COLLECTION_METRICS = {
 		HiscoreSkill.COLLECTIONS_LOGGED,
 		HiscoreSkill.CLUE_SCROLL_ALL,
@@ -40,6 +47,7 @@ public class RuneVersusService
 	private final OptInSyncService optInSyncService;
 	private final RuneVersusConfig config;
 	private final ScheduledExecutorService executor;
+	private final ConcurrentMap<String, CachedLeague> monthlyLeagueCache = new ConcurrentHashMap<>();
 
 	@Inject
 	public RuneVersusService(
@@ -107,6 +115,54 @@ public class RuneVersusService
 			}
 			players.sort(java.util.Comparator.comparing(ClanProgressPlayer::getName, String.CASE_INSENSITIVE_ORDER));
 			return new ClanProgressLeaderboard(label, groupId, players);
+		}, executor);
+	}
+
+	public CompletableFuture<MonthlyLeagueSeason> analyzeMonthlyLeague(
+		int groupId,
+		YearMonth month,
+		boolean forceRefresh)
+	{
+		if (groupId <= 0 || month == null)
+		{
+			CompletableFuture<MonthlyLeagueSeason> failed = new CompletableFuture<>();
+			failed.completeExceptionally(new IllegalArgumentException("A WOM group and season are required"));
+			return failed;
+		}
+
+		Instant now = Instant.now();
+		String cacheKey = groupId + ":" + month;
+		CachedLeague cached = monthlyLeagueCache.get(cacheKey);
+		if (!forceRefresh && cached != null
+			&& Duration.between(cached.cachedAt, now).compareTo(MONTHLY_LEAGUE_CACHE_TTL) < 0)
+		{
+			return CompletableFuture.completedFuture(cached.season);
+		}
+
+		return CompletableFuture.supplyAsync(() ->
+		{
+			Instant fetchedAt = Instant.now();
+			Instant startsAt = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+			Instant seasonEnd = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+			Instant queryEnd = fetchedAt.isBefore(seasonEnd) ? fetchedAt : seasonEnd;
+			if (!queryEnd.isAfter(startsAt))
+			{
+				throw new IllegalStateException("This monthly season has not started yet");
+			}
+			try
+			{
+				MonthlyLeagueSeason season = new MonthlyLeagueSeason(
+					groupId,
+					month,
+					fetchedAt,
+					wiseOldManGainsClient.getMonthlyLeagueGains(groupId, startsAt, queryEnd));
+				monthlyLeagueCache.put(cacheKey, new CachedLeague(season, fetchedAt));
+				return season;
+			}
+			catch (IOException ex)
+			{
+				throw new IllegalStateException(ex);
+			}
 		}, executor);
 	}
 
@@ -302,5 +358,17 @@ public class RuneVersusService
 	private static String normalizedName(String name)
 	{
 		return cleanName(name).replace('\u00a0', ' ').toLowerCase(Locale.ROOT);
+	}
+
+	private static final class CachedLeague
+	{
+		private final MonthlyLeagueSeason season;
+		private final Instant cachedAt;
+
+		private CachedLeague(MonthlyLeagueSeason season, Instant cachedAt)
+		{
+			this.season = season;
+			this.cachedAt = cachedAt;
+		}
 	}
 }

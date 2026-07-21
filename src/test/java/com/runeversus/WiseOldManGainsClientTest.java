@@ -2,12 +2,40 @@ package com.runeversus;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class WiseOldManGainsClientTest
 {
+	@Test
+	public void parsesMonthlyLeagueEfficiencyAndCollectionGains()
+	{
+		String json = "[{"
+			+ "\"player\":{\"username\":\"alice\",\"displayName\":\"Alice\",\"type\":\"ironman\"},"
+			+ "\"startDate\":\"2026-07-01T01:00:00Z\","
+			+ "\"endDate\":\"2026-07-20T12:00:00Z\","
+			+ "\"data\":["
+			+ "{\"metric\":\"ehp\",\"gained\":12.75},"
+			+ "{\"metric\":\"ehb\",\"gained\":8.5},"
+			+ "{\"metric\":\"collections_logged\",\"gained\":6},"
+			+ "{\"metric\":\"overall\",\"gained\":1234567}]}]";
+
+		List<MonthlyLeagueParticipant> parsed = WiseOldManGainsClient.parseMonthlyLeagueGains(
+			new Gson().fromJson(json, JsonArray.class));
+
+		Assert.assertEquals(1, parsed.size());
+		MonthlyLeagueParticipant participant = parsed.get(0);
+		Assert.assertEquals("Alice", participant.getName());
+		Assert.assertEquals("ironman", participant.getAccountType());
+		Assert.assertEquals(12.75, participant.getEhpGained(), 0.001);
+		Assert.assertEquals(8.5, participant.getEhbGained(), 0.001);
+		Assert.assertEquals(6L, participant.getCollectionsGained());
+		Assert.assertEquals(Instant.parse("2026-07-01T01:00:00Z"), participant.getTrackedFrom());
+	}
+
 	@Test
 	public void parsesOverallCollectionsAndSummedBossKc()
 	{

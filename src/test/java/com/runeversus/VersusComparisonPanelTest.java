@@ -17,6 +17,33 @@ import org.junit.Test;
 public class VersusComparisonPanelTest
 {
 	@Test
+	public void calculatesPlayerSharesAcrossTheFullComparisonBar()
+	{
+		MetricResult attack = new MetricResult(
+			MetricType.SKILL, "Attack", 35_700_000L, 59_800_000L);
+
+		Assert.assertEquals(0.3738, VersusComparisonPanel.leftShare(attack), 0.0001);
+		Assert.assertEquals(0.6262, 1.0 - VersusComparisonPanel.leftShare(attack), 0.0001);
+	}
+
+	@Test
+	public void reversesShareForLowerIsBetterPersonalBests()
+	{
+		MetricResult personalBest = new MetricResult(
+			MetricType.PERSONAL_BEST, "PB Vorkath (s)", 45L, 60L, true);
+
+		Assert.assertEquals(0.5714, VersusComparisonPanel.leftShare(personalBest), 0.0001);
+	}
+
+	@Test
+	public void usesEvenShareWhenBothValuesAreZero()
+	{
+		MetricResult empty = new MetricResult(MetricType.SKILL, "Attack", 0L, 0L);
+
+		Assert.assertEquals(0.5, VersusComparisonPanel.leftShare(empty), 0.0);
+	}
+
+	@Test
 	public void filtersCompleteComparisonByCategoryAndMetricName() throws Exception
 	{
 		AtomicReference<VersusComparisonPanel> panelRef = new AtomicReference<>();

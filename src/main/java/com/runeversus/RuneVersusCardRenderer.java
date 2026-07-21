@@ -36,6 +36,7 @@ public class RuneVersusCardRenderer
 	private static final Color STONE_MID = new Color(75, 60, 42);
 	private static final Color STONE_DARK = new Color(31, 24, 17);
 	private static final Color GOLD = new Color(255, 152, 31);
+	private static final Color SILVER = new Color(205, 211, 222);
 	private static final Color RED = new Color(194, 67, 76);
 	private static final Color TEAL = new Color(73, 190, 176);
 	private static final Color BLUE = new Color(80, 132, 213);
@@ -141,6 +142,63 @@ public class RuneVersusCardRenderer
 				+ leaderboard.getGroupId(), WIDTH / 2, 604, MUTED);
 			g.setFont(osrsBold(19));
 			centerText(g, "Five periods. Three crowns. One clan.", WIDTH / 2, 641, TEXT);
+		}
+		finally
+		{
+			g.dispose();
+		}
+		return image;
+	}
+
+	public BufferedImage renderMonthlyLeague(MonthlyLeagueSeason season, RuneVersusCardTheme theme)
+	{
+		BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		try
+		{
+			setup(g);
+			RuneVersusCardTheme resolvedTheme = theme == RuneVersusCardTheme.AUTO ? RuneVersusCardTheme.CLAN_WAR : theme;
+			drawBackground(g, resolvedTheme);
+			drawTitlePlaque(g, 345, 18, 510, 88, resolvedTheme.getGold());
+			g.setFont(osrsBold(31));
+			centerText(g, "RuneVersus", WIDTH / 2, 48, resolvedTheme.getGold());
+			g.setFont(osrsBold(23));
+			centerText(g, "MONTHLY LEAGUE", WIDTH / 2, 74, TEXT);
+			g.setFont(osrsRegular(15));
+			centerText(g, season.getLabel() + " • " + (season.isLive() ? "LIVE STANDINGS" : "FINAL PODIUM")
+				+ " • WOM group #" + season.getGroupId(), WIDTH / 2, 98, MUTED);
+
+			List<MonthlyLeagueStanding> ranked = new java.util.ArrayList<>();
+			for (MonthlyLeagueStanding standing : season.rankedBy(MonthlyLeagueMetric.OVERALL))
+			{
+				if (standing.isEligible() && standing.getOverallScore() > 0.0)
+				{
+					ranked.add(standing);
+				}
+			}
+			drawLeaguePodium(g, 58, 145, 330, 170, ranked.size() > 1 ? ranked.get(1) : null, 2, SILVER);
+			drawLeaguePodium(g, 435, 125, 330, 190, ranked.size() > 0 ? ranked.get(0) : null, 1, resolvedTheme.getGold());
+			drawLeaguePodium(g, 812, 155, 330, 160, ranked.size() > 2 ? ranked.get(2) : null, 3, new Color(205, 135, 82));
+
+			drawLeagueChampion(g, 58, 352, 330, 112, "SKILLING CHAMPION",
+				season.getChampion(MonthlyLeagueMetric.SKILLING), MonthlyLeagueMetric.SKILLING, resolvedTheme.getGold());
+			drawLeagueChampion(g, 435, 352, 330, 112, "PVM CHAMPION",
+				season.getChampion(MonthlyLeagueMetric.PVM), MonthlyLeagueMetric.PVM, RED);
+			drawLeagueChampion(g, 812, 352, 330, 112, "COLLECTION SPOTLIGHT",
+				season.getChampion(MonthlyLeagueMetric.COLLECTION), MonthlyLeagueMetric.COLLECTION, TEAL);
+
+			drawInsetBox(g, 120, 500, 960, 76, resolvedTheme.getGold());
+			g.setFont(osrsBold(19));
+			centerText(g, "LEAGUE SCORE = 50% SKILLING RANK + 50% PVM RANK", WIDTH / 2, 531, TEXT);
+			g.setFont(osrsRegular(15));
+			centerText(g, "Collection Logs have their own podium and never affect the overall result.", WIDTH / 2, 558, TEAL);
+
+			g.setFont(osrsRegular(14));
+			centerText(g, season.getEligibleCount() + " eligible • " + season.getProvisionalCount()
+				+ " provisional • " + season.getFreshCount() + " fresh snapshots", WIDTH / 2, 607, MUTED);
+			g.setFont(osrsBold(19));
+			centerText(g, season.isLive() ? "The podium is still moving." : "Season complete. The podium is locked.",
+				WIDTH / 2, 640, TEXT);
 		}
 		finally
 		{
@@ -406,6 +464,86 @@ public class RuneVersusCardRenderer
 	{
 		g.setFont(osrsBold(16));
 		centerText(g, label, centerX, 127, color);
+	}
+
+	private static void drawLeaguePodium(
+		Graphics2D g,
+		int x,
+		int y,
+		int width,
+		int height,
+		MonthlyLeagueStanding standing,
+		int place,
+		Color color)
+	{
+		drawPanel(g, x, y, width, height, color, color);
+		g.setFont(osrsBold(18));
+		int displayedPlace = standing == null ? place : standing.getOverallRank();
+		centerText(g, displayedPlace + ordinal(displayedPlace) + " PLACE", x + width / 2, y + 31, color);
+		String name = standing == null ? "No contender" : standing.getName();
+		g.setFont(fitFont(g, name, Font.BOLD, 31, width - 48));
+		centerText(g, name, x + width / 2, y + 76, TEXT);
+		g.setFont(osrsBold(standing == null ? 25 : 38));
+		centerText(g, standing == null ? "—" : String.format(java.util.Locale.ROOT, "%.1f pts", standing.getOverallScore()),
+			x + width / 2, y + 121, color);
+		if (standing != null)
+		{
+			g.setFont(osrsRegular(14));
+			centerText(g, String.format(java.util.Locale.ROOT, "%.2f EHP  •  %.2f EHB",
+				standing.getEhpGained(), standing.getEhbGained()), x + width / 2, y + height - 18, MUTED);
+		}
+	}
+
+	private static void drawLeagueChampion(
+		Graphics2D g,
+		int x,
+		int y,
+		int width,
+		int height,
+		String title,
+		MonthlyLeagueStanding standing,
+		MonthlyLeagueMetric metric,
+		Color color)
+	{
+		drawInsetBox(g, x, y, width, height, color);
+		g.setFont(osrsBold(15));
+		centerText(g, title, x + width / 2, y + 24, color);
+		String name = standing == null ? "No activity" : standing.getName();
+		g.setFont(fitFont(g, name, Font.BOLD, 25, width - 40));
+		centerText(g, name, x + width / 2, y + 61, TEXT);
+		String value = "—";
+		if (standing != null)
+		{
+			switch (metric)
+			{
+				case SKILLING:
+					value = String.format(java.util.Locale.ROOT, "%.2f EHP", standing.getEhpGained());
+					break;
+				case PVM:
+					value = String.format(java.util.Locale.ROOT, "%.2f EHB", standing.getEhbGained());
+					break;
+				case COLLECTION:
+					value = "+" + standing.getCollectionsGained() + " CLogs";
+					break;
+				default:
+					value = String.format(java.util.Locale.ROOT, "%.1f pts", standing.getOverallScore());
+			}
+		}
+		g.setFont(osrsBold(22));
+		centerText(g, value, x + width / 2, y + 94, color);
+	}
+
+	private static String ordinal(int place)
+	{
+		if (place == 1)
+		{
+			return "ST";
+		}
+		if (place == 2)
+		{
+			return "ND";
+		}
+		return "RD";
 	}
 
 	private static void drawPeriodBadge(Graphics2D g, int x, int y, GainPeriod period, Color accent)

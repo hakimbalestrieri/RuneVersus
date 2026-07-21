@@ -66,6 +66,18 @@ tasks.register('previewVersusPanel', JavaExec) {
 	mainClass = 'com.runeversus.VersusComparisonPanelPreview'
 }
 
+tasks.register('previewMonthlyLeaguePanel', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.MonthlyLeaguePanelPreview'
+}
+
+tasks.register('previewMonthlyLeagueCard', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.MonthlyLeagueCardPreview'
+}
+
 tasks.register('shadowJar', Jar) {
 	dependsOn configurations.testRuntimeClasspath
 	manifest {
