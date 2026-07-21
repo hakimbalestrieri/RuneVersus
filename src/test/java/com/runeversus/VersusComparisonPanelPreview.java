@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
+import net.runelite.client.game.SkillIconManager;
 
 public class VersusComparisonPanelPreview
 {
@@ -27,7 +28,8 @@ public class VersusComparisonPanelPreview
 			try
 			{
 				VersusComparisonPanel panel = new VersusComparisonPanel(
-					"Close", () -> { }, () -> { }, () -> { });
+					"Close", () -> { }, () -> { }, () -> { },
+					new RuneVersusIcons(new SkillIconManager(), null));
 				panel.setResult(sampleResult(), null, "Elyas5 takes the overall lead.");
 				panel.selectCategory(VersusComparisonPanel.Category.SKILLS);
 				panel.setSize(1000, 820);
