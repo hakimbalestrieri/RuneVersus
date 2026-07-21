@@ -38,6 +38,8 @@ fair calendar-month leagues, and OSRS-style cards ready to share.
 - Keep the detailed comparison in the side panel or open it in a large standalone window.
 - Export a 16:9 PNG with Auto, PvM, Skilling, Ironman, Clan War, or Underdog styling.
 
+![RuneVersus right-click comparison](docs/images/right-click-comparison.png)
+
 ![RuneVersus duel card](docs/images/duel-card.png)
 
 ### Compact `!vs` results
@@ -57,6 +59,8 @@ RuneVersus can render a comparison in one short chat line:
 `!vs <player>` compares the sender with that player. Use a comma or quotes when
 names contain spaces. Incoming commands are rate-limited and their result is
 rendered **locally** in your client; RuneVersus never sends a chat reply for you.
+
+![RuneVersus compact chat command](docs/images/chat-command.png)
 
 ## Clan performance
 
