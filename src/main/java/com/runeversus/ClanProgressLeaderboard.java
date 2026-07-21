@@ -12,13 +12,36 @@ public class ClanProgressLeaderboard
 {
 	private final String label;
 	private final int groupId;
+	private final ProgressGroupType groupType;
+	private final String sourceDescription;
 	private final List<ClanProgressPlayer> players;
 	private final Instant createdAt;
 
 	public ClanProgressLeaderboard(String label, int groupId, List<ClanProgressPlayer> players)
 	{
+		this(label, groupId, ProgressGroupType.CLAN, "WOM group #" + groupId, players);
+	}
+
+	public ClanProgressLeaderboard(
+		String label,
+		ProgressGroupType groupType,
+		String sourceDescription,
+		List<ClanProgressPlayer> players)
+	{
+		this(label, 0, groupType, sourceDescription, players);
+	}
+
+	private ClanProgressLeaderboard(
+		String label,
+		int groupId,
+		ProgressGroupType groupType,
+		String sourceDescription,
+		List<ClanProgressPlayer> players)
+	{
 		this.label = label;
 		this.groupId = groupId;
+		this.groupType = groupType == null ? ProgressGroupType.CLAN : groupType;
+		this.sourceDescription = sourceDescription == null ? "Wise Old Man" : sourceDescription;
 		this.players = Collections.unmodifiableList(new ArrayList<>(players));
 		this.createdAt = Instant.now();
 	}
@@ -31,6 +54,16 @@ public class ClanProgressLeaderboard
 	public int getGroupId()
 	{
 		return groupId;
+	}
+
+	public ProgressGroupType getGroupType()
+	{
+		return groupType;
+	}
+
+	public String getSourceDescription()
+	{
+		return sourceDescription;
 	}
 
 	public List<ClanProgressPlayer> getPlayers()
@@ -105,13 +138,13 @@ public class ClanProgressLeaderboard
 	{
 		if (players.isEmpty())
 		{
-			return "[RuneVersus] No tracked players found for Wise Old Man group #" + groupId + ".";
+			return "[RuneVersus] No tracked players found for " + sourceDescription + ".";
 		}
 		StringBuilder out = new StringBuilder("[RuneVersus] ")
 			.append(label)
 			.append(" • ")
 			.append(players.size())
-			.append(" WOM player(s)\n");
+			.append(" tracked player(s)\n");
 		for (String line : toChatLines())
 		{
 			out.append(line.substring(5)).append('\n');

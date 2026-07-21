@@ -114,7 +114,7 @@ public class RuneVersusCardRenderer
 			g.setFont(osrsBold(31));
 			centerText(g, "RuneVersus", WIDTH / 2, 49, resolvedTheme.getGold());
 			g.setFont(osrsBold(22));
-			centerText(g, "CLAN PROGRESS", WIDTH / 2, 73, TEXT);
+			centerText(g, leaderboard.getGroupType().getCardTitle(), WIDTH / 2, 73, TEXT);
 			g.setFont(osrsRegular(14));
 			centerText(g, leaderboard.getLabel() + " • " + leaderboard.getPlayers().size() + " tracked players • "
 				+ DATE_FORMAT.format(leaderboard.getCreatedAt()), WIDTH / 2, 94, MUTED);
@@ -137,10 +137,10 @@ public class RuneVersusCardRenderer
 			}
 
 			g.setFont(osrsRegular(15));
-			centerText(g, "Wise Old Man snapshots • Boss KC is summed across every boss • Group #"
-				+ leaderboard.getGroupId(), WIDTH / 2, 604, MUTED);
+			centerText(g, "Wise Old Man snapshots • Boss KC is summed across every boss • "
+				+ leaderboard.getSourceDescription(), WIDTH / 2, 604, MUTED);
 			g.setFont(osrsBold(19));
-			centerText(g, "Five periods. Three crowns. One clan.", WIDTH / 2, 641, TEXT);
+			centerText(g, leaderboard.getGroupType().getCardTagline(), WIDTH / 2, 641, TEXT);
 		}
 		finally
 		{

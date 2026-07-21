@@ -2,6 +2,7 @@ package com.runeversus;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import java.util.Map;
 import org.junit.Assert;
 import org.junit.Test;
@@ -55,4 +56,37 @@ public class WiseOldManGainsClientTest
 		Assert.assertEquals(300L, totals.getBossKc("Chambers of Xeric"));
 	}
 
+	@Test
+	public void parsesIndividualFriendChatMemberGains()
+	{
+		String json = "{\"data\":{"
+			+ "\"skills\":{\"overall\":{\"experience\":{\"gained\":456789}}},"
+			+ "\"activities\":{\"collections_logged\":{\"score\":{\"gained\":4}}},"
+			+ "\"bosses\":{\"vorkath\":{\"kills\":{\"gained\":12}},"
+			+ "\"zulrah\":{\"kills\":{\"gained\":7}}}}}";
+
+		ClanProgressGains gains = WiseOldManGainsClient.parsePlayerGains(
+			new Gson().fromJson(json, JsonObject.class));
+
+		Assert.assertEquals(456789L, gains.getXp());
+		Assert.assertEquals(4L, gains.getCollections());
+		Assert.assertEquals(19L, gains.getBossKc());
+		Assert.assertEquals(12L, gains.getBossKc("Vorkath"));
+	}
+
+	@Test
+	public void parsesIndividualFriendChatMemberAllTimeTotals()
+	{
+		String json = "{\"exp\":999,\"latestSnapshot\":{\"data\":{"
+			+ "\"skills\":{\"overall\":{\"experience\":123456789}},"
+			+ "\"activities\":{\"collections_logged\":{\"score\":987}},"
+			+ "\"bosses\":{\"vorkath\":{\"kills\":1200}}}}}";
+
+		ClanProgressGains totals = WiseOldManGainsClient.parsePlayerAllTime(
+			new Gson().fromJson(json, JsonObject.class));
+
+		Assert.assertEquals(123456789L, totals.getXp());
+		Assert.assertEquals(987L, totals.getCollections());
+		Assert.assertEquals(1200L, totals.getBossKc("Vorkath"));
+	}
 }

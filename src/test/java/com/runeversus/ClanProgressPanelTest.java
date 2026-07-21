@@ -32,7 +32,7 @@ public class ClanProgressPanelTest
 		ClanProgressPanel panel = panelRef.get();
 		Assert.assertEquals(3, panel.getDisplayedPlayerCount());
 		Assert.assertEquals("Bob", panel.getDisplayedPlayerName(0));
-		Assert.assertTrue(panel.getTrackedTooltip().contains("Wise Old Man"));
+		Assert.assertTrue(panel.getTrackedTooltip().contains("public Hiscores"));
 		Assert.assertTrue(panel.getActiveTooltip().contains("24h"));
 		Assert.assertTrue(panel.getClogTooltip().contains("+3"));
 		Assert.assertTrue(panel.getAverageTooltip().contains("divided by Active"));
@@ -67,7 +67,22 @@ public class ClanProgressPanelTest
 		Assert.assertEquals(4, panel.getLeaderboardColumnCount());
 		Assert.assertTrue(panel.getActiveTooltip().contains("latest Wise Old Man snapshot"));
 		Assert.assertTrue(panel.getClogTooltip().contains("current collection-log count"));
-		Assert.assertTrue(panel.getAverageTooltip().contains("Total clan XP"));
+		Assert.assertTrue(panel.getAverageTooltip().contains("Total group XP"));
+
+		ClanProgressLeaderboard friendsChat = new ClanProgressLeaderboard(
+			"Raid Friends",
+			ProgressGroupType.FRIENDS_CHAT,
+			"Friend Chat · Raid Friends",
+			java.util.Collections.singletonList(player("Friend", gains(25, 1, 2), gains(100, 2, 8))));
+		SwingUtilities.invokeAndWait(() ->
+		{
+			panel.setSearchText("");
+			panel.selectPeriod(GainPeriod.DAY);
+			panel.setLeaderboard(friendsChat);
+		});
+		Assert.assertEquals("FRIEND CHAT PERFORMANCE", panel.getPerformanceTitle());
+		Assert.assertEquals(1, panel.getDisplayedPlayerCount());
+		Assert.assertEquals("Friend", panel.getDisplayedPlayerName(0));
 	}
 
 	private static ClanProgressPlayer player(String name, ClanProgressGains day, ClanProgressGains week)

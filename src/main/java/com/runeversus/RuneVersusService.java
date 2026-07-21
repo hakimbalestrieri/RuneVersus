@@ -110,6 +110,66 @@ public class RuneVersusService
 		}, executor);
 	}
 
+	public CompletableFuture<ClanProgressLeaderboard> analyzeRosterProgress(
+		String label,
+		String sourceDescription,
+		List<String> rosterNames)
+	{
+		List<String> names = rosterNames == null
+			? Collections.emptyList() : new ArrayList<>(rosterNames);
+		return CompletableFuture.supplyAsync(() ->
+		{
+			List<ClanProgressPlayer> players = new ArrayList<>();
+			for (String rawName : names)
+			{
+				String name = cleanName(rawName);
+				if (name.isEmpty())
+				{
+					continue;
+				}
+
+				HiscoreResult hiscores;
+				try
+				{
+					hiscores = hiscoreClient.lookup(name, config.hiscoreEndpoint());
+				}
+				catch (IOException ex)
+				{
+					continue;
+				}
+				if (hiscores == null)
+				{
+					continue;
+				}
+
+				EnumMap<GainPeriod, ClanProgressGains> gains = new EnumMap<>(GainPeriod.class);
+				gains.put(GainPeriod.ALL_TIME, progressFromHiscores(hiscores));
+				for (GainPeriod period : GainPeriod.values())
+				{
+					if (period.isAllTime())
+					{
+						continue;
+					}
+					try
+					{
+						gains.put(period, wiseOldManGainsClient.getPlayerProgress(name, period));
+					}
+					catch (IOException ex)
+					{
+						gains.put(period, new ClanProgressGains(0L, 0L, 0L));
+					}
+				}
+				players.add(new ClanProgressPlayer(name, gains));
+			}
+			players.sort(java.util.Comparator.comparing(ClanProgressPlayer::getName, String.CASE_INSENSITIVE_ORDER));
+			return new ClanProgressLeaderboard(
+				label,
+				ProgressGroupType.FRIENDS_CHAT,
+				sourceDescription,
+				players);
+		}, executor);
+	}
+
 	private PlayerProfile loadProfile(String name) throws IOException
 	{
 		HiscoreResult result = hiscoreClient.lookup(name, config.hiscoreEndpoint());
@@ -297,6 +357,26 @@ public class RuneVersusService
 	private static String cleanName(String name)
 	{
 		return name == null ? "" : name.trim();
+	}
+
+	private static ClanProgressGains progressFromHiscores(HiscoreResult result)
+	{
+		Map<String, Long> bossKc = new LinkedHashMap<>();
+		for (HiscoreSkill metric : HiscoreSkill.values())
+		{
+			if (metric.getType() == HiscoreSkillType.BOSS)
+			{
+				long kills = score(result, metric);
+				if (kills > 0L)
+				{
+					bossKc.put(BossKcRegistry.displayName(metric.getName()), kills);
+				}
+			}
+		}
+		return new ClanProgressGains(
+			skillExperience(result, HiscoreSkill.OVERALL),
+			score(result, HiscoreSkill.COLLECTIONS_LOGGED),
+			bossKc);
 	}
 
 	private static String normalizedName(String name)

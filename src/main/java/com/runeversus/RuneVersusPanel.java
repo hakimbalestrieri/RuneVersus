@@ -43,6 +43,7 @@ public class RuneVersusPanel extends PluginPanel
 	enum RosterKind
 	{
 		PARTY("Party"),
+		FRIENDS_CHAT("Friend chat"),
 		CLAN_ONLINE("Online clan"),
 		CLAN_ALL("All clan members");
 
@@ -63,7 +64,8 @@ public class RuneVersusPanel extends PluginPanel
 	enum SocialAction
 	{
 		CLAN_PROGRESS,
-		CLAN_PROGRESS_CARD
+		CLAN_PROGRESS_CARD,
+		FRIENDS_CHAT_PROGRESS
 	}
 
 	private final JComboBox<String> leftPlayer = new JComboBox<>();
@@ -90,7 +92,9 @@ public class RuneVersusPanel extends PluginPanel
 	private Supplier<String> localPlayerSupplier;
 	private Runnable exportAgainCallback;
 	private Runnable clanProgressRefreshCallback;
+	private Runnable friendsChatProgressRefreshCallback;
 	private Consumer<ClanProgressLeaderboard> clanProgressExportCallback;
+	private boolean friendsChatProgressActive;
 	private volatile File exportedCard;
 
 	RuneVersusPanel()
@@ -133,9 +137,11 @@ public class RuneVersusPanel extends PluginPanel
 			this::hideClanWindow,
 			() ->
 			{
-				if (clanProgressRefreshCallback != null)
+				Runnable callback = friendsChatProgressActive
+					? friendsChatProgressRefreshCallback : clanProgressRefreshCallback;
+				if (callback != null)
 				{
-					clanProgressRefreshCallback.run();
+					callback.run();
 				}
 			},
 			leaderboard ->
@@ -205,6 +211,11 @@ public class RuneVersusPanel extends PluginPanel
 	void setClanProgressRefreshCallback(Runnable callback)
 	{
 		this.clanProgressRefreshCallback = callback;
+	}
+
+	void setFriendsChatProgressRefreshCallback(Runnable callback)
+	{
+		this.friendsChatProgressRefreshCallback = callback;
 	}
 
 	void setClanProgressExportCallback(Consumer<ClanProgressLeaderboard> callback)
@@ -381,8 +392,10 @@ public class RuneVersusPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
+			friendsChatProgressActive = false;
+			clanProgressPanel.setContext(ProgressGroupType.CLAN);
 			clanProgressPanel.setLeaderboard(leaderboard);
-			showClanWindow();
+			showProgressWindow("RuneVersus — Clan performance");
 		});
 	}
 
@@ -390,8 +403,10 @@ public class RuneVersusPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
+			friendsChatProgressActive = false;
+			clanProgressPanel.setContext(ProgressGroupType.CLAN);
 			clanProgressPanel.setLoading(message);
-			showClanWindow();
+			showProgressWindow("RuneVersus — Clan performance");
 		});
 	}
 
@@ -399,8 +414,43 @@ public class RuneVersusPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
+			friendsChatProgressActive = false;
+			clanProgressPanel.setContext(ProgressGroupType.CLAN);
 			clanProgressPanel.setError(message);
-			showClanWindow();
+			showProgressWindow("RuneVersus — Clan performance");
+		});
+	}
+
+	void showFriendsChatProgress(ClanProgressLeaderboard leaderboard)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			friendsChatProgressActive = true;
+			clanProgressPanel.setContext(ProgressGroupType.FRIENDS_CHAT);
+			clanProgressPanel.setLeaderboard(leaderboard);
+			showProgressWindow("RuneVersus — Friend Chat performance");
+		});
+	}
+
+	void showFriendsChatProgressLoading(String message)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			friendsChatProgressActive = true;
+			clanProgressPanel.setContext(ProgressGroupType.FRIENDS_CHAT);
+			clanProgressPanel.setLoading(message);
+			showProgressWindow("RuneVersus — Friend Chat performance");
+		});
+	}
+
+	void showFriendsChatProgressError(String message)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			friendsChatProgressActive = true;
+			clanProgressPanel.setContext(ProgressGroupType.FRIENDS_CHAT);
+			clanProgressPanel.setError(message);
+			showProgressWindow("RuneVersus — Friend Chat performance");
 		});
 	}
 
@@ -465,17 +515,18 @@ public class RuneVersusPanel extends PluginPanel
 		}
 	}
 
-	private void showClanWindow()
+	private void showProgressWindow(String windowTitle)
 	{
 		if (clanWindow == null)
 		{
-			clanWindow = new JFrame("RuneVersus — Clan performance");
+			clanWindow = new JFrame(windowTitle);
 			clanWindow.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
 			clanWindow.setContentPane(clanProgressPanel);
 			clanWindow.setMinimumSize(new Dimension(900, 650));
 			clanWindow.setSize(1100, 820);
 			clanWindow.setLocationByPlatform(true);
 		}
+		clanWindow.setTitle(windowTitle);
 		clanWindow.setVisible(true);
 		clanWindow.setExtendedState(clanWindow.getExtendedState() & ~JFrame.ICONIFIED);
 		clanWindow.toFront();
@@ -487,7 +538,7 @@ public class RuneVersusPanel extends PluginPanel
 		JPanel panel = cardPanel();
 		panel.add(sectionTitle("Players"));
 		panel.add(Box.createVerticalStrut(3));
-		panel.add(infoLabel("Type two names, or load players from Party or clan."));
+		panel.add(infoLabel("Type two names, or load players from Party, Friend Chat, or clan."));
 		panel.add(Box.createVerticalStrut(7));
 		panel.add(fieldRow("Player 1", leftPlayer));
 		panel.add(Box.createVerticalStrut(3));
@@ -505,7 +556,7 @@ public class RuneVersusPanel extends PluginPanel
 		panel.add(me);
 		panel.add(Box.createVerticalStrut(12));
 
-		panel.add(subsectionTitle("Load Party or clan"));
+		panel.add(subsectionTitle("Load a player list"));
 		panel.add(Box.createVerticalStrut(3));
 		panel.add(fieldRow("Player list", rosterKind));
 		panel.add(Box.createVerticalStrut(4));
@@ -533,7 +584,7 @@ public class RuneVersusPanel extends PluginPanel
 		JPanel panel = cardPanel();
 		panel.add(sectionTitle("Clan tools"));
 		panel.add(Box.createVerticalStrut(3));
-		panel.add(infoLabel("Clan performance, rankings, and shareable cards."));
+		panel.add(infoLabel("Clan and Friend Chat performance, rankings, and shareable cards."));
 		panel.add(Box.createVerticalStrut(7));
 		panel.add(toolsOutputScroll);
 		panel.add(Box.createVerticalStrut(8));
@@ -542,6 +593,10 @@ public class RuneVersusPanel extends PluginPanel
 			"Clan member comparison",
 			"Opens a large clan window with five periods, champions, totals, search and ranking filters.",
 			SocialAction.CLAN_PROGRESS);
+		addTool(panel,
+			"Friend chat comparison",
+			"Compares current Friend Chat members up to your roster limit, with five periods, bosses, filters, and card export.",
+			SocialAction.FRIENDS_CHAT_PROGRESS);
 		addTool(panel,
 			"Export progress card",
 			"Exports all 15 clan leaders directly to a shareable PNG without opening the clan window.",

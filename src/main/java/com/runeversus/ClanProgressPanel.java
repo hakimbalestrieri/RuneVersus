@@ -44,21 +44,22 @@ class ClanProgressPanel extends JPanel
 	private static final Color BRONZE = new Color(205, 135, 82);
 	private static final Color TEAL = new Color(82, 201, 181);
 	private static final Color RED = new Color(224, 104, 104);
-	private static final String TRACKED_TOOLTIP = "<html><b>Tracked</b><br>Members with Wise Old Man data returned for this group.<br>Each member is counted once.</html>";
+	private static final String TRACKED_TOOLTIP = "<html><b>Tracked</b><br>Members with public Hiscores returned for this comparison.<br>Each member is counted once.</html>";
 	private static final String ACTIVE_TOOLTIP = "<html><b>Active</b><br>For a gain period: members who gained XP, unlocked a CLog,<br>or gained Boss KC. All-time uses non-zero totals.</html>";
 	private static final String CLOG_TOOLTIP = "<html><b>CLogs</b><br>Collection-log unlocks summed across all members.<br><b>+3</b> means three unlocks in total, not necessarily three unique items.</html>";
-	private static final String AVERAGE_TOOLTIP = "<html><b>Average active XP</b><br>Total clan XP divided by Active members.<br>Members with no tracked activity are excluded.</html>";
+	private static final String AVERAGE_TOOLTIP = "<html><b>Average active XP</b><br>Total XP divided by Active members.<br>Members with no tracked activity are excluded.</html>";
 
 	private final Runnable closeCallback;
 	private final Runnable refreshCallback;
 	private final Consumer<ClanProgressLeaderboard> exportCallback;
 	private final Runnable openCardCallback;
 	private final RuneVersusIcons icons;
+	private final JLabel performanceTitle = new JLabel("CLAN PERFORMANCE", SwingConstants.CENTER);
 	private final JComboBox<GainPeriod> periodSelector = new JComboBox<>(GainPeriod.values());
 	private final JComboBox<ClanProgressMetric> sortSelector = new JComboBox<>(ClanProgressMetric.values());
 	private final JComboBox<String> bossSelector = new JComboBox<>();
 	private final JTextField searchField = new JTextField();
-	private final JLabel sourceStatus = new JLabel("No clan data loaded.", SwingConstants.CENTER);
+	private final JLabel sourceStatus = new JLabel("No group data loaded.", SwingConstants.CENTER);
 	private final JLabel membersValue = summaryValue(GOLD);
 	private final JLabel activeValue = summaryValue(SILVER);
 	private final JLabel xpValue = summaryValue(GOLD);
@@ -90,6 +91,7 @@ class ClanProgressPanel extends JPanel
 	private JPanel bossLeaderCard;
 
 	private ClanProgressLeaderboard leaderboard;
+	private ProgressGroupType currentGroupType = ProgressGroupType.CLAN;
 
 	ClanProgressPanel(
 		Runnable closeCallback,
@@ -124,11 +126,30 @@ class ClanProgressPanel extends JPanel
 
 	void setLeaderboard(ClanProgressLeaderboard leaderboard)
 	{
+		if (leaderboard != null)
+		{
+			setContext(leaderboard.getGroupType());
+		}
 		this.leaderboard = leaderboard;
 		populateBossSelector(leaderboard == null ? BossKcRegistry.allNames() : leaderboard.getBossNames());
 		refreshButton.setEnabled(true);
 		exportButton.setEnabled(leaderboard != null && !leaderboard.getPlayers().isEmpty());
 		refreshView();
+	}
+
+	void setContext(ProgressGroupType groupType)
+	{
+		ProgressGroupType type = groupType == null ? ProgressGroupType.CLAN : groupType;
+		if (type != currentGroupType)
+		{
+			currentGroupType = type;
+			leaderboard = null;
+			listModel.clear();
+			visibleMembers.setText("0 shown");
+			populateBossSelector(BossKcRegistry.allNames());
+			exportButton.setEnabled(false);
+		}
+		performanceTitle.setText(type.getWindowTitle());
 	}
 
 	void setLoading(String message)
@@ -215,11 +236,15 @@ class ClanProgressPanel extends JPanel
 		return columnHeader.getComponentCount();
 	}
 
+	String getPerformanceTitle()
+	{
+		return performanceTitle.getText();
+	}
+
 	private JPanel buildTop()
 	{
 		JPanel top = verticalPanel(ColorScheme.DARK_GRAY_COLOR);
 
-		JLabel performanceTitle = new JLabel("CLAN PERFORMANCE", SwingConstants.CENTER);
 		performanceTitle.setFont(FontManager.getRunescapeBoldFont().deriveFont(22f));
 		performanceTitle.setForeground(ColorScheme.BRAND_ORANGE);
 		performanceTitle.setAlignmentX(CENTER_ALIGNMENT);
@@ -413,7 +438,7 @@ class ClanProgressPanel extends JPanel
 	private void wireControls()
 	{
 		bossSelector.setMaximumRowCount(18);
-		bossSelector.setToolTipText("Choose a boss to compare every clan member's KC");
+		bossSelector.setToolTipText("Choose a boss to compare every member's KC");
 		bossSelector.setRenderer(new DefaultListCellRenderer()
 		{
 			@Override
@@ -561,7 +586,7 @@ class ClanProgressPanel extends JPanel
 		clogLeader.setToolTipText(clogHelp);
 		memberList.setToolTipText(bossName == null ? clogHelp : bossHelp);
 		sourceStatus.setText((period.isAllTime() ? "Latest totals" : period.getLabel() + " gains")
-			+ "  ·  WOM group #" + leaderboard.getGroupId()
+			+ "  ·  " + leaderboard.getSourceDescription()
 			+ (bossName == null ? "" : "  ·  Boss: " + bossName)
 			+ "  ·  Updated " + UPDATED_FORMAT.format(leaderboard.getCreatedAt()));
 
@@ -799,9 +824,9 @@ class ClanProgressPanel extends JPanel
 	{
 		if (period.isAllTime())
 		{
-			return "<html><b>Average active XP - All-time</b><br>Total clan XP divided by members with at least one non-zero<br>XP, CLog, or Boss KC total.</html>";
+			return "<html><b>Average active XP - All-time</b><br>Total group XP divided by members with at least one non-zero<br>XP, CLog, or Boss KC total.</html>";
 		}
-		return "<html><b>Average active XP - " + period.getLabel() + "</b><br>Clan XP gained during this period divided by Active members.<br>Members with no tracked activity are excluded.</html>";
+		return "<html><b>Average active XP - " + period.getLabel() + "</b><br>Group XP gained during this period divided by Active members.<br>Members with no tracked activity are excluded.</html>";
 	}
 
 	private static String bossTooltip(GainPeriod period, String bossName)

@@ -8,6 +8,8 @@ import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
+import net.runelite.api.FriendsChatManager;
+import net.runelite.api.FriendsChatMember;
 import net.runelite.api.Player;
 import net.runelite.api.clan.ClanChannel;
 import net.runelite.api.clan.ClanChannelMember;
@@ -64,6 +66,29 @@ public class RosterService
 			}
 		}
 		return sorted(names);
+	}
+
+	public List<String> getFriendsChatMembers()
+	{
+		Set<String> names = new LinkedHashSet<>();
+		FriendsChatManager manager = client.getFriendsChatManager();
+		if (manager != null && manager.getMembers() != null)
+		{
+			for (FriendsChatMember member : manager.getMembers())
+			{
+				if (member != null && member.getName() != null)
+				{
+					names.add(clean(member.getName()));
+				}
+			}
+		}
+		return sorted(names);
+	}
+
+	public String getFriendsChatName()
+	{
+		FriendsChatManager manager = client.getFriendsChatManager();
+		return manager == null || manager.getName() == null ? "" : clean(manager.getName());
 	}
 
 	public List<String> getAllClanMembers()

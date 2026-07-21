@@ -22,6 +22,7 @@ and stream overlays.
 - Show the closest category, such as the KC or XP needed to take the lead.
 - Show a biggest-flex highlight for the largest account gap.
 - Pick players directly from your RuneLite Party.
+- Pick players from the current Friend Chat and open a full five-period comparison.
 - Pick online or full members from your clan channel.
 - Right-click visible players to run `VS Compare`; optional clan-list shortcuts provide `VS Set A` and `VS Set B`.
 - Export a duel-card PNG after comparisons.
@@ -44,6 +45,9 @@ RuneVersus includes social tools from the side panel:
   year, and all-time totals;
   rank by XP, CLogs, or total boss KC; search by name; and review clan totals,
   active-member counts, average active XP, and the three period leaders.
+- Friend Chat Comparison: opens the same large comparison window for the current
+  Friend Chat roster (up to the configured roster limit), including per-boss KC,
+  search, five periods, refresh, and shareable card export.
 - Export Progress Card: creates one 16:9 card containing all 15 period/category
   leaders and exposes it through the clickable `Open saved card` link.
 
@@ -75,6 +79,8 @@ are copied, right-click player menus are enabled, and Party announcements are on
   page. RuneVersus makes five bulk read-only requests (day, week, month, year,
   and current bulk hiscores); rankings depend on the snapshots available in
   Wise Old Man.
+- Friend Chat comparison reads each included member's all-time totals from public
+  OSRS Hiscores and recent 24h, week, month, and year gains from Wise Old Man.
 - Full collection log and boss personal best times are not public for arbitrary
   players.
 - Local opt-in sync reads Combat Achievement tiers, private PB, and collection

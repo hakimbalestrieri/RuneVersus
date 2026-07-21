@@ -9,8 +9,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.swing.SwingUtilities;
@@ -127,6 +129,8 @@ public class RuneVersusPlugin extends Plugin
 		panel.setLocalPlayerSupplier(() -> localPlayerName);
 		panel.setExportAgainCallback(this::exportLastCard);
 		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false));
+		panel.setFriendsChatProgressRefreshCallback(
+			() -> clientThread.invokeLater(this::analyzeFriendsChatProgress));
 		panel.setClanProgressExportCallback(this::exportClanProgress);
 
 		BufferedImage icon = cardRenderer.renderIcon();
@@ -469,6 +473,10 @@ public class RuneVersusPlugin extends Plugin
 					names = rosterService.getPartyMembers();
 					label = "Party";
 					break;
+				case FRIENDS_CHAT:
+					names = rosterService.getFriendsChatMembers();
+					label = "Friend chat";
+					break;
 				case CLAN_ONLINE:
 					names = rosterService.getOnlineClanMembers();
 					label = "Online clan";
@@ -502,6 +510,9 @@ public class RuneVersusPlugin extends Plugin
 					break;
 				case CLAN_PROGRESS_CARD:
 					analyzeClanProgress(true);
+					break;
+				case FRIENDS_CHAT_PROGRESS:
+					analyzeFriendsChatProgress();
 					break;
 				default:
 					panel.setStatus("Unknown social action.");
@@ -572,6 +583,49 @@ public class RuneVersusPlugin extends Plugin
 			});
 	}
 
+	private void analyzeFriendsChatProgress()
+	{
+		List<String> names = limitedNames(rosterService.getFriendsChatMembers());
+		String chatName = rosterService.getFriendsChatName();
+		if (names.isEmpty())
+		{
+			String message = "Join a Friend Chat with visible members before running the comparison.";
+			panel.setStatus(message);
+			panel.showFriendsChatProgressLoading(message);
+			panel.showFriendsChatProgressError(message);
+			return;
+		}
+
+		String label = chatName.isEmpty() ? "Friend Chat" : chatName;
+		String source = chatName.isEmpty() ? "Current Friend Chat roster" : "Friend Chat · " + chatName;
+		panel.setStatus("Fetching Friend Chat gains and all-time totals...");
+		panel.showFriendsChatProgressLoading(
+			"Loading five periods for " + names.size() + " Friend Chat member(s)...");
+		versusService.analyzeRosterProgress(label, source, names)
+			.thenAccept(leaderboard ->
+			{
+				if (leaderboard.getPlayers().isEmpty())
+				{
+					String message = "No public Hiscores found for the current Friend Chat members.";
+					panel.showFriendsChatProgressError(message);
+					panel.setStatus(message);
+					sendChatMessage("[RuneVersus] " + message);
+					return;
+				}
+
+				panel.showFriendsChatProgress(leaderboard);
+				panel.setStatus("Friend Chat comparison ready.");
+			})
+			.exceptionally(ex ->
+			{
+				String message = "Friend Chat comparison failed: " + readableError(ex);
+				panel.setStatus(message);
+				panel.showFriendsChatProgressError(message);
+				sendChatMessage("[RuneVersus] " + message);
+				return null;
+			});
+	}
+
 	private void exportClanProgress(ClanProgressLeaderboard leaderboard)
 	{
 		exportClanProgress(leaderboard, true);
@@ -592,7 +646,14 @@ public class RuneVersusPlugin extends Plugin
 			panel.setStatus(message);
 			if (showWindowOnError)
 			{
-				panel.showClanProgressError(message);
+				if (leaderboard.getGroupType() == ProgressGroupType.FRIENDS_CHAT)
+				{
+					panel.showFriendsChatProgressError(message);
+				}
+				else
+				{
+					panel.showClanProgressError(message);
+				}
 			}
 		}
 	}
@@ -600,6 +661,30 @@ public class RuneVersusPlugin extends Plugin
 	private String verdict(DuelResult result)
 	{
 		return RuneVersusFlavor.verdict(result, config.verdictStyle());
+	}
+
+	private List<String> limitedNames(List<String> names)
+	{
+		if (names == null || names.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+
+		int max = Math.max(2, Math.min(50, config.maxRosterPlayers()));
+		Set<String> unique = new LinkedHashSet<>();
+		for (String name : names)
+		{
+			String cleaned = clean(name);
+			if (!cleaned.isEmpty())
+			{
+				unique.add(cleaned);
+			}
+			if (unique.size() >= max)
+			{
+				break;
+			}
+		}
+		return new ArrayList<>(unique);
 	}
 
 	private static String socialActionLabel(RuneVersusPanel.SocialAction action)
@@ -610,6 +695,8 @@ public class RuneVersusPlugin extends Plugin
 				return "Clan member comparison";
 			case CLAN_PROGRESS_CARD:
 				return "progress card";
+			case FRIENDS_CHAT_PROGRESS:
+				return "Friend Chat comparison";
 			default:
 				return "social action";
 		}

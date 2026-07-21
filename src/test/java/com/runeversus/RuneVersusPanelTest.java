@@ -19,12 +19,14 @@ public class RuneVersusPanelTest
 	public void exposesSimpleCompareFlowAndAlwaysShowsClanTools() throws Exception
 	{
 		AtomicReference<String> comparison = new AtomicReference<>();
+		AtomicReference<RuneVersusPanel.SocialAction> socialAction = new AtomicReference<>();
 		AtomicReference<RuneVersusPanel> panelRef = new AtomicReference<>();
 
 		SwingUtilities.invokeAndWait(() ->
 		{
 			RuneVersusPanel panel = new RuneVersusPanel();
 			panel.setCompareCallback((left, right) -> comparison.set(left + " vs " + right));
+			panel.setSocialActionCallback(socialAction::set);
 			panelRef.set(panel);
 		});
 
@@ -34,16 +36,22 @@ public class RuneVersusPanelTest
 		JButton comparePlayers = button(panel, "Compare players");
 		Assert.assertNotNull(comparePlayers);
 		JButton clanComparison = button(panel, "Clan member comparison");
+		JButton friendsChatComparison = button(panel, "Friend chat comparison");
 		JButton exportProgress = button(panel, "Export progress card");
 		Assert.assertNotNull(clanComparison);
+		Assert.assertNotNull(friendsChatComparison);
 		Assert.assertNotNull(exportProgress);
 		Assert.assertTrue(clanComparison.isVisible());
+		Assert.assertTrue(friendsChatComparison.isVisible());
 		Assert.assertTrue(exportProgress.isVisible());
 		Assert.assertNull(button(panel, "Fight Night"));
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), comparePlayers.getBackground());
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), clanComparison.getBackground());
+		Assert.assertEquals(new java.awt.Color(255, 193, 7), friendsChatComparison.getBackground());
 		Assert.assertEquals(new java.awt.Color(255, 193, 7), exportProgress.getBackground());
 		Assert.assertNull(button(panel, "Party & clan tools"));
+		SwingUtilities.invokeAndWait(friendsChatComparison::doClick);
+		Assert.assertEquals(RuneVersusPanel.SocialAction.FRIENDS_CHAT_PROGRESS, socialAction.get());
 
 		SwingUtilities.invokeAndWait(() ->
 		{
@@ -73,7 +81,7 @@ public class RuneVersusPanelTest
 		Assert.assertTrue(useMyName.getWidth() >= 220);
 
 		JTextArea playerHelp = textArea(panelRef.get(),
-			"Type two names, or load players from Party or clan.");
+			"Type two names, or load players from Party, Friend Chat, or clan.");
 		JTextArea clanHelp = textArea(panelRef.get(),
 			"Opens a large clan window with five periods, champions, totals, search and ranking filters.");
 		Assert.assertNotNull(playerHelp);

@@ -184,7 +184,7 @@ public interface RuneVersusConfig extends Config
 	@ConfigItem(
 		keyName = "maxRosterPlayers",
 		name = "Roster limit",
-		description = "Maximum Party or clan players scanned for comparisons and leaderboards.",
+		description = "Maximum Party, Friend Chat, or clan players scanned for comparisons and leaderboards.",
 		section = socialSection,
 		position = 4
 	)

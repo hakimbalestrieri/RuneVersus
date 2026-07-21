@@ -38,6 +38,20 @@ public class ClanProgressLeaderboardTest
 		Assert.assertEquals("[RV] All-time | XP: Bob 2.0m | CLogs: Alice 100 | Boss KC: Bob 1,500", lines.get(4));
 	}
 
+	@Test
+	public void identifiesFriendChatProgressSource()
+	{
+		ClanProgressLeaderboard leaderboard = new ClanProgressLeaderboard(
+			"Raid Friends",
+			ProgressGroupType.FRIENDS_CHAT,
+			"Friend Chat · Raid Friends",
+			java.util.Collections.emptyList());
+
+		Assert.assertEquals(ProgressGroupType.FRIENDS_CHAT, leaderboard.getGroupType());
+		Assert.assertEquals("Friend Chat · Raid Friends", leaderboard.getSourceDescription());
+		Assert.assertTrue(leaderboard.toDisplayText().contains("Friend Chat · Raid Friends"));
+	}
+
 	private static ClanProgressPlayer player(String name, PeriodGains... periodGains)
 	{
 		Map<GainPeriod, ClanProgressGains> gains = new EnumMap<>(GainPeriod.class);

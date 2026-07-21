@@ -81,6 +81,39 @@ public class WiseOldManGainsClient
 		}
 	}
 
+	public ClanProgressGains getPlayerProgress(String username, GainPeriod period) throws IOException
+	{
+		if (period == null)
+		{
+			throw new IOException("Wise Old Man period is required");
+		}
+
+		HttpUrl url = HttpUrl.parse(BASE_URL + urlName(username)
+			+ (period.isAllTime() ? "" : "/gained"));
+		if (url == null)
+		{
+			throw new IOException("Invalid Wise Old Man player URL");
+		}
+
+		HttpUrl requestUrl = period.isAllTime()
+			? url
+			: url.newBuilder().addQueryParameter("period", period.getApiValue()).build();
+		Request request = new Request.Builder()
+			.url(requestUrl)
+			.header("Accept", "application/json")
+			.build();
+
+		try (Response response = okHttpClient.newCall(request).execute())
+		{
+			if (!response.isSuccessful() || response.body() == null)
+			{
+				throw new IOException("Wise Old Man player request failed (HTTP " + response.code() + ")");
+			}
+			JsonObject root = gson.fromJson(response.body().charStream(), JsonObject.class);
+			return period.isAllTime() ? parsePlayerAllTime(root) : parsePlayerGains(root);
+		}
+	}
+
 	public Map<String, ClanProgressGains> getGroupGains(int groupId, GainPeriod period) throws IOException
 	{
 		if (groupId <= 0)
@@ -254,6 +287,69 @@ public class WiseOldManGainsClient
 			totalsByPlayer.put(name, new ClanProgressGains(xp, collectionCount, bossKc));
 		}
 		return totalsByPlayer;
+	}
+
+	static ClanProgressGains parsePlayerGains(JsonObject root)
+	{
+		JsonObject data = object(root, "data");
+		JsonObject skills = object(data, "skills");
+		JsonObject bosses = object(data, "bosses");
+		JsonObject activities = object(data, "activities");
+
+		long xp = Math.max(0L, longValue(object(object(skills, "overall"), "experience"), "gained"));
+		long collections = Math.max(0L,
+			longValue(object(object(activities, "collections_logged"), "score"), "gained"));
+		Map<String, Long> bossKc = new LinkedHashMap<>();
+		if (bosses != null)
+		{
+			for (Map.Entry<String, JsonElement> boss : bosses.entrySet())
+			{
+				if (!boss.getValue().isJsonObject())
+				{
+					continue;
+				}
+				long gained = Math.max(0L,
+					longValue(object(boss.getValue().getAsJsonObject(), "kills"), "gained"));
+				if (gained > 0L)
+				{
+					bossKc.put(BossKcRegistry.displayName(boss.getKey()), gained);
+				}
+			}
+		}
+		return new ClanProgressGains(xp, collections, bossKc);
+	}
+
+	static ClanProgressGains parsePlayerAllTime(JsonObject root)
+	{
+		JsonObject snapshot = object(root, "latestSnapshot");
+		JsonObject data = object(snapshot, "data");
+		JsonObject skills = object(data, "skills");
+		JsonObject bosses = object(data, "bosses");
+		JsonObject activities = object(data, "activities");
+
+		long xp = Math.max(0L, longValue(object(skills, "overall"), "experience"));
+		if (xp == 0L)
+		{
+			xp = Math.max(0L, longValue(root, "exp"));
+		}
+		long collections = Math.max(0L, longValue(object(activities, "collections_logged"), "score"));
+		Map<String, Long> bossKc = new LinkedHashMap<>();
+		if (bosses != null)
+		{
+			for (Map.Entry<String, JsonElement> boss : bosses.entrySet())
+			{
+				if (!boss.getValue().isJsonObject())
+				{
+					continue;
+				}
+				long kills = Math.max(0L, longValue(boss.getValue().getAsJsonObject(), "kills"));
+				if (kills > 0L)
+				{
+					bossKc.put(BossKcRegistry.displayName(boss.getKey()), kills);
+				}
+			}
+		}
+		return new ClanProgressGains(xp, collections, bossKc);
 	}
 
 	private static JsonObject object(JsonObject parent, String key)
