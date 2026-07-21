@@ -51,8 +51,7 @@ import net.runelite.client.util.Text;
 @PluginDescriptor(
 	name = "RuneVersus",
 	description = "Compare OSRS players and run fair monthly clan leagues with shareable podium cards.",
-	tags = {"hiscore", "compare", "versus", "duel", "clan", "league", "competition", "boss", "kc", "xp", "card"},
-	enabledByDefault = false
+	tags = {"hiscore", "compare", "versus", "duel", "clan", "league", "competition", "boss", "kc", "xp", "card"}
 )
 public class RuneVersusPlugin extends Plugin
 {
