@@ -3,7 +3,6 @@ plugins {
 }
 
 repositories {
-	mavenLocal()
 	maven {
 		url = 'https://repo.runelite.net'
 		content {
@@ -41,6 +40,30 @@ tasks.register('run', JavaExec) {
 		"--add-exports=java.desktop/com.apple.eawt=ALL-UNNAMED",
 		"--add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
 	args "--developer-mode", "--debug"
+}
+
+tasks.register('previewClanProgress', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.ClanProgressCardPreview'
+}
+
+tasks.register('previewDuelCard', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.DuelCardPreview'
+}
+
+tasks.register('previewClanPanel', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.ClanProgressPanelPreview'
+}
+
+tasks.register('previewVersusPanel', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.runeversus.VersusComparisonPanelPreview'
 }
 
 tasks.register('shadowJar', Jar) {

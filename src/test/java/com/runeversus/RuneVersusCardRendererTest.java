@@ -7,6 +7,8 @@ import com.runeversus.model.PlayerProfile;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.Map;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -46,5 +48,24 @@ public class RuneVersusCardRendererTest
 			}
 		}
 		Assert.assertTrue(differentPixels > 50);
+	}
+
+	@Test
+	public void rendersNonBlankClanProgressCard()
+	{
+		Map<GainPeriod, ClanProgressGains> gains = new EnumMap<>(GainPeriod.class);
+		gains.put(GainPeriod.DAY, new ClanProgressGains(2_800_000, 4, 86));
+		gains.put(GainPeriod.WEEK, new ClanProgressGains(12_400_000, 9, 311));
+		gains.put(GainPeriod.MONTH, new ClanProgressGains(48_000_000, 22, 840));
+		gains.put(GainPeriod.YEAR, new ClanProgressGains(510_000_000, 117, 4_800));
+		ClanProgressLeaderboard leaderboard = new ClanProgressLeaderboard(
+			"Clan progress", 42,
+			Collections.singletonList(new ClanProgressPlayer("Hakim", gains)));
+
+		BufferedImage image = new RuneVersusCardRenderer().renderClanProgress(
+			leaderboard, RuneVersusCardTheme.CLAN_WAR);
+		Assert.assertEquals(1200, image.getWidth());
+		Assert.assertEquals(675, image.getHeight());
+		Assert.assertNotEquals(image.getRGB(0, 0), image.getRGB(346, 180));
 	}
 }
