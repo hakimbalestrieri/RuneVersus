@@ -76,6 +76,36 @@ public class MonthlyLeagueSeasonTest
 		Assert.assertFalse(standing(finalized, "Stale").isEligible());
 	}
 
+	@Test
+	public void keepsArchivedIdentitiesSeparateWhenANameIsReused()
+	{
+		MonthlyLeagueParticipant original = new MonthlyLeagueParticipant(
+			1L, "Same name", "regular", 10, 10, 0,
+			JULY_START, NOW, JULY_START, true);
+		MonthlyLeagueParticipant replacement = new MonthlyLeagueParticipant(
+			2L, "Same name", "regular", 100, 100, 0,
+			JULY_START, NOW, JULY_START.plusSeconds(10 * 86_400L), false);
+
+		MonthlyLeagueSeason season = season(original, replacement);
+
+		Assert.assertEquals(2, season.getStandings().size());
+		Assert.assertEquals(1, season.getEligibleCount());
+		Assert.assertEquals(1, season.getProvisionalCount());
+	}
+
+	@Test
+	public void dropsInvalidExternalPlayerNamesAndAccountTypes()
+	{
+		MonthlyLeagueParticipant participant = new MonthlyLeagueParticipant(
+			1L, "bad/name", "<script>", 10, 10, 1,
+			JULY_START, NOW, JULY_START, true);
+
+		MonthlyLeagueSeason season = season(participant);
+
+		Assert.assertTrue(season.getStandings().isEmpty());
+		Assert.assertEquals("unknown", participant.getAccountType());
+	}
+
 	private static MonthlyLeagueSeason season(MonthlyLeagueParticipant... participants)
 	{
 		return new MonthlyLeagueSeason(42, YearMonth.of(2026, 7), NOW, Arrays.asList(participants));

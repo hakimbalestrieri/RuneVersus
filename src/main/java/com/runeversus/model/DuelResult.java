@@ -29,6 +29,20 @@ public class DuelResult
 		List<MetricResult> weekForm,
 		List<MetricResult> monthForm)
 	{
+		this(left, right, skills, bosses, activities, dayForm, weekForm, monthForm, Instant.now());
+	}
+
+	public DuelResult(
+		PlayerProfile left,
+		PlayerProfile right,
+		List<MetricResult> skills,
+		List<MetricResult> bosses,
+		List<MetricResult> activities,
+		List<MetricResult> dayForm,
+		List<MetricResult> weekForm,
+		List<MetricResult> monthForm,
+		Instant createdAt)
+	{
 		this.left = left;
 		this.right = right;
 		this.skills = immutable(skills);
@@ -37,7 +51,7 @@ public class DuelResult
 		this.dayForm = immutable(dayForm);
 		this.weekForm = immutable(weekForm);
 		this.monthForm = immutable(monthForm);
-		this.createdAt = Instant.now();
+		this.createdAt = createdAt == null ? Instant.now() : createdAt;
 	}
 
 	private static List<MetricResult> immutable(List<MetricResult> metrics)
@@ -289,17 +303,37 @@ public class DuelResult
 		long total = 0;
 		for (MetricResult metric : metrics)
 		{
-			total += side == PlayerSide.LEFT ? metric.getLeftValue() : metric.getRightValue();
+			total = saturatedAdd(total,
+				side == PlayerSide.LEFT ? metric.getLeftValue() : metric.getRightValue());
 		}
 		return total;
 	}
 
 	private static long totalSkillValue(List<MetricResult> metrics, PlayerSide side)
 	{
-		return metrics.stream()
-			.filter(m -> !"Overall".equals(m.getName()))
-			.mapToLong(m -> side == PlayerSide.LEFT ? m.getLeftValue() : m.getRightValue())
-			.sum();
+		long total = 0L;
+		for (MetricResult metric : metrics)
+		{
+			if (!"Overall".equals(metric.getName()))
+			{
+				total = saturatedAdd(total,
+					side == PlayerSide.LEFT ? metric.getLeftValue() : metric.getRightValue());
+			}
+		}
+		return total;
+	}
+
+	private static long saturatedAdd(long left, long right)
+	{
+		if (right > 0L && left > Long.MAX_VALUE - right)
+		{
+			return Long.MAX_VALUE;
+		}
+		if (right < 0L && left < Long.MIN_VALUE - right)
+		{
+			return Long.MIN_VALUE;
+		}
+		return left + right;
 	}
 
 	private static long metricValue(List<MetricResult> metrics, String name, PlayerSide side)

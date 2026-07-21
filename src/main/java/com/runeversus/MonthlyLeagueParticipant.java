@@ -42,8 +42,8 @@ public class MonthlyLeagueParticipant
 		boolean rosterEligible)
 	{
 		this.playerId = Math.max(0L, playerId);
-		this.name = name == null ? "" : name.trim();
-		this.accountType = accountType == null ? "unknown" : accountType.trim();
+		this.name = normalizePlayerName(name);
+		this.accountType = normalizeAccountType(accountType);
 		this.ehpGained = finitePositive(ehpGained);
 		this.ehbGained = finitePositive(ehbGained);
 		this.collectionsGained = Math.max(0L, collectionsGained);
@@ -111,5 +111,39 @@ public class MonthlyLeagueParticipant
 	private static double finitePositive(double value)
 	{
 		return Double.isFinite(value) ? Math.max(0.0, value) : 0.0;
+	}
+
+	static String normalizePlayerName(String value)
+	{
+		try
+		{
+			return OsrsPlayerName.requireValid(value);
+		}
+		catch (IllegalArgumentException ex)
+		{
+			return "";
+		}
+	}
+
+	static String normalizeAccountType(String value)
+	{
+		String type = value == null ? "" : value.trim();
+		if (type.isEmpty() || type.length() > 32)
+		{
+			return "unknown";
+		}
+		for (int index = 0; index < type.length(); index++)
+		{
+			char character = type.charAt(index);
+			if (!(character >= 'A' && character <= 'Z')
+				&& !(character >= 'a' && character <= 'z')
+				&& !(character >= '0' && character <= '9')
+				&& character != '-'
+				&& character != '_')
+			{
+				return "unknown";
+			}
+		}
+		return type;
 	}
 }

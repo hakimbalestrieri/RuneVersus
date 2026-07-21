@@ -6,8 +6,13 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
+import java.util.function.Consumer;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -18,13 +23,26 @@ public class CardExporter
 {
 	private static final DateTimeFormatter FILE_TIME =
 		DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
+	private static final int MAX_FILENAME_ATTEMPTS = 10_000;
 
 	private final RuneVersusCardRenderer renderer;
+	private final File directory;
+	private final Consumer<String> clipboardWriter;
 
 	@Inject
 	public CardExporter(RuneVersusCardRenderer renderer)
 	{
-		this.renderer = renderer;
+		this(
+			renderer,
+			new File(RuneLite.RUNELITE_DIR, "rune-versus/cards"),
+			CardExporter::copyToSystemClipboard);
+	}
+
+	CardExporter(RuneVersusCardRenderer renderer, File directory, Consumer<String> clipboardWriter)
+	{
+		this.renderer = Objects.requireNonNull(renderer);
+		this.directory = Objects.requireNonNull(directory);
+		this.clipboardWriter = Objects.requireNonNull(clipboardWriter);
 	}
 
 	public File export(DuelResult duel, boolean copyPathToClipboard) throws IOException
@@ -34,24 +52,9 @@ public class CardExporter
 
 	public File export(DuelResult duel, boolean copyPathToClipboard, RuneVersusCardTheme theme, String verdict) throws IOException
 	{
-		File dir = new File(RuneLite.RUNELITE_DIR, "rune-versus/cards");
-		if (!dir.exists() && !dir.mkdirs())
-		{
-			throw new IOException("Unable to create export directory: " + dir);
-		}
-
 		String name = sanitize(duel.getLeft().getName()) + "-vs-" + sanitize(duel.getRight().getName())
 			+ "-" + FILE_TIME.format(duel.getCreatedAt()) + ".png";
-		File out = new File(dir, name);
-		BufferedImage image = renderer.render(duel, theme, verdict);
-		ImageIO.write(image, "png", out);
-
-		if (copyPathToClipboard)
-		{
-			Toolkit.getDefaultToolkit().getSystemClipboard()
-				.setContents(new StringSelection(out.getAbsolutePath()), null);
-		}
-		return out;
+		return writeCard(name, renderer.render(duel, theme, verdict), copyPathToClipboard);
 	}
 
 	public File exportClanProgress(
@@ -59,24 +62,9 @@ public class CardExporter
 		boolean copyPathToClipboard,
 		RuneVersusCardTheme theme) throws IOException
 	{
-		File dir = new File(RuneLite.RUNELITE_DIR, "rune-versus/cards");
-		if (!dir.exists() && !dir.mkdirs())
-		{
-			throw new IOException("Unable to create export directory: " + dir);
-		}
-
 		String name = sanitize(leaderboard.getLabel()) + "-progress-"
 			+ FILE_TIME.format(leaderboard.getCreatedAt()) + ".png";
-		File out = new File(dir, name);
-		BufferedImage image = renderer.renderClanProgress(leaderboard, theme);
-		ImageIO.write(image, "png", out);
-
-		if (copyPathToClipboard)
-		{
-			Toolkit.getDefaultToolkit().getSystemClipboard()
-				.setContents(new StringSelection(out.getAbsolutePath()), null);
-		}
-		return out;
+		return writeCard(name, renderer.renderClanProgress(leaderboard, theme), copyPathToClipboard);
 	}
 
 	public File exportMonthlyLeague(
@@ -84,22 +72,76 @@ public class CardExporter
 		boolean copyPathToClipboard,
 		RuneVersusCardTheme theme) throws IOException
 	{
-		File dir = new File(RuneLite.RUNELITE_DIR, "rune-versus/cards");
-		if (!dir.exists() && !dir.mkdirs())
-		{
-			throw new IOException("Unable to create export directory: " + dir);
-		}
-
 		String name = "monthly-league-" + season.getMonth() + "-"
 			+ FILE_TIME.format(season.getGeneratedAt()) + ".png";
-		File out = new File(dir, name);
-		ImageIO.write(renderer.renderMonthlyLeague(season, theme), "png", out);
+		return writeCard(name, renderer.renderMonthlyLeague(season, theme), copyPathToClipboard);
+	}
+
+	private File writeCard(String fileName, BufferedImage image, boolean copyPathToClipboard) throws IOException
+	{
+		Path output = reserveOutput(fileName);
+		boolean written = false;
+		try
+		{
+			if (!ImageIO.write(image, "png", output.toFile()))
+			{
+				throw new IOException("No PNG image writer is available");
+			}
+			written = true;
+		}
+		finally
+		{
+			if (!written)
+			{
+				Files.deleteIfExists(output);
+			}
+		}
+
+		File exported = output.toFile();
 		if (copyPathToClipboard)
 		{
-			Toolkit.getDefaultToolkit().getSystemClipboard()
-				.setContents(new StringSelection(out.getAbsolutePath()), null);
+			try
+			{
+				clipboardWriter.accept(exported.getAbsolutePath());
+			}
+			catch (RuntimeException ignored)
+			{
+				// The PNG was saved successfully. A busy or unavailable clipboard must not turn that into a failed export.
+			}
 		}
-		return out;
+		return exported;
+	}
+
+	private Path reserveOutput(String fileName) throws IOException
+	{
+		Path exportDirectory = directory.toPath().toAbsolutePath().normalize();
+		Files.createDirectories(exportDirectory);
+		String stem = fileName.endsWith(".png")
+			? fileName.substring(0, fileName.length() - 4) : fileName;
+		for (int attempt = 1; attempt <= MAX_FILENAME_ATTEMPTS; attempt++)
+		{
+			String candidateName = attempt == 1 ? stem + ".png" : stem + "-" + attempt + ".png";
+			Path candidate = exportDirectory.resolve(candidateName).normalize();
+			if (!exportDirectory.equals(candidate.getParent()))
+			{
+				throw new IOException("Invalid card filename");
+			}
+			try
+			{
+				return Files.createFile(candidate);
+			}
+			catch (FileAlreadyExistsException ignored)
+			{
+				// Keep existing exports and reserve the next suffix atomically.
+			}
+		}
+		throw new IOException("Too many cards share the same filename");
+	}
+
+	private static void copyToSystemClipboard(String path)
+	{
+		Toolkit.getDefaultToolkit().getSystemClipboard()
+			.setContents(new StringSelection(path), null);
 	}
 
 	private static String sanitize(String name)

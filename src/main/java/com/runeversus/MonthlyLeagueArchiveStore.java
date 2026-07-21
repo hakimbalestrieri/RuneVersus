@@ -23,6 +23,7 @@ public class MonthlyLeagueArchiveStore
 {
 	private static final String SCHEMA_VERSION = "1";
 	private static final int MAX_PARTICIPANTS = 2_000;
+	private static final long MAX_ARCHIVE_BYTES = 2L * 1024L * 1024L;
 	private final File directory;
 
 	@Inject
@@ -39,13 +40,14 @@ public class MonthlyLeagueArchiveStore
 	synchronized Archive load(int groupId, YearMonth month)
 	{
 		File file = archiveFile(groupId, month);
-		if (!file.isFile())
+		if (!file.isFile() || file.length() > MAX_ARCHIVE_BYTES)
 		{
 			return null;
 		}
 
 		Properties properties = new Properties();
-		try (FileInputStream input = new FileInputStream(file))
+		try (LimitedInputStream input = new LimitedInputStream(
+			new FileInputStream(file), MAX_ARCHIVE_BYTES))
 		{
 			properties.load(input);
 			if (!SCHEMA_VERSION.equals(properties.getProperty("schema"))
@@ -64,7 +66,8 @@ public class MonthlyLeagueArchiveStore
 			for (int index = 0; index < count; index++)
 			{
 				String prefix = "participant." + index + ".";
-				String name = properties.getProperty(prefix + "name", "").trim();
+				String name = MonthlyLeagueParticipant.normalizePlayerName(
+					properties.getProperty(prefix + "name", ""));
 				if (name.isEmpty())
 				{
 					continue;

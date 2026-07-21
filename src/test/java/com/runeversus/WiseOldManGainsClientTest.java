@@ -67,6 +67,89 @@ public class WiseOldManGainsClientTest
 	}
 
 	@Test
+	public void safelyEncodesPlayerNamesAsOnePathSegment() throws Exception
+	{
+		AtomicReference<Request> captured = new AtomicReference<>();
+		OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain ->
+		{
+			captured.set(chain.request());
+			return response(chain.request(), 200, "{\"data\":{\"skills\":{}}}");
+		}).build();
+		WiseOldManGainsClient client = new WiseOldManGainsClient(http, new Gson(), new WiseOldManRequestGate(
+			20, 60_000L, 0L, System::currentTimeMillis, Thread::sleep));
+
+		client.getSkillExperienceGains("Alice Bob", "day");
+
+		Assert.assertEquals("/v2/players/Alice%20Bob/gained", captured.get().url().encodedPath());
+	}
+
+	@Test
+	public void rejectsInvalidPlayerNamesBeforeCallingWiseOldMan() throws Exception
+	{
+		AtomicInteger requests = new AtomicInteger();
+		OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain ->
+		{
+			requests.incrementAndGet();
+			return response(chain.request(), 200, "{}");
+		}).build();
+		WiseOldManGainsClient client = new WiseOldManGainsClient(http, new Gson(), new WiseOldManRequestGate(
+			20, 60_000L, 0L, System::currentTimeMillis, Thread::sleep));
+
+		try
+		{
+			client.getSkillExperienceGains("Alice/Bob", "day");
+			Assert.fail("Expected an invalid RSN to be rejected");
+		}
+		catch (java.io.IOException expected)
+		{
+			Assert.assertTrue(expected.getMessage().contains("RSN"));
+		}
+		Assert.assertEquals(0, requests.get());
+	}
+
+	@Test
+	public void toleratesUnexpectedMetricValueTypes() throws Exception
+	{
+		OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain ->
+			response(chain.request(), 200,
+				"{\"data\":{\"skills\":{\"overall\":{\"experience\":[]}}}}"))
+			.build();
+		WiseOldManGainsClient client = new WiseOldManGainsClient(http, new Gson(), new WiseOldManRequestGate(
+			20, 60_000L, 0L, System::currentTimeMillis, Thread::sleep));
+
+		Assert.assertTrue(client.getSkillExperienceGains("Alice", "day").isEmpty());
+	}
+
+	@Test
+	public void rejectsUnexpectedlyLargeGroupArrays() throws Exception
+	{
+		StringBuilder json = new StringBuilder("[");
+		for (int index = 0; index < 2_001; index++)
+		{
+			if (index > 0)
+			{
+				json.append(',');
+			}
+			json.append("{}");
+		}
+		json.append(']');
+		OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain ->
+			response(chain.request(), 200, json.toString())).build();
+		WiseOldManGainsClient client = new WiseOldManGainsClient(http, new Gson(), new WiseOldManRequestGate(
+			20, 60_000L, 0L, System::currentTimeMillis, Thread::sleep));
+
+		try
+		{
+			client.getGroupGains(139, GainPeriod.DAY);
+			Assert.fail("Expected an oversized group array to be rejected");
+		}
+		catch (java.io.IOException expected)
+		{
+			Assert.assertTrue(expected.getMessage().contains("too many"));
+		}
+	}
+
+	@Test
 	public void parsesMonthlyLeagueEfficiencyAndCollectionGains()
 	{
 		String json = "[{"

@@ -15,13 +15,23 @@ public class OptInSyncService
 {
 	private static final String PB_PREFIX = "pb.";
 	private static final String PERSONAL_BEST_PREFIX = "personalBest.";
+	private static final int MAX_PERSONAL_BESTS = 256;
+	private static final int MAX_BOSS_NAME_LENGTH = 80;
+	private static final long MAX_SYNC_FILE_BYTES = 1024L * 1024L;
 
 	private final RuneVersusConfig config;
+	private final File directory;
 
 	@Inject
 	public OptInSyncService(RuneVersusConfig config)
 	{
+		this(config, new File(RuneLite.RUNELITE_DIR, "rune-versus/sync"));
+	}
+
+	OptInSyncService(RuneVersusConfig config, File directory)
+	{
 		this.config = config;
+		this.directory = directory;
 	}
 
 	public SyncedPlayerData load(String playerName)
@@ -31,18 +41,19 @@ public class OptInSyncService
 			return SyncedPlayerData.EMPTY;
 		}
 
-		File file = new File(new File(RuneLite.RUNELITE_DIR, "rune-versus/sync"), sanitize(playerName) + ".properties");
-		if (!file.isFile())
+		File file = new File(directory, sanitize(playerName) + ".properties");
+		if (!file.isFile() || file.length() > MAX_SYNC_FILE_BYTES)
 		{
 			return SyncedPlayerData.EMPTY;
 		}
 
 		Properties properties = new Properties();
-		try (FileInputStream in = new FileInputStream(file))
+		try (LimitedInputStream in = new LimitedInputStream(
+			new FileInputStream(file), MAX_SYNC_FILE_BYTES))
 		{
 			properties.load(in);
 		}
-		catch (IOException ex)
+		catch (IOException | IllegalArgumentException ex)
 		{
 			return SyncedPlayerData.EMPTY;
 		}
@@ -50,6 +61,10 @@ public class OptInSyncService
 		Map<String, Long> personalBests = new LinkedHashMap<>();
 		for (String key : properties.stringPropertyNames())
 		{
+			if (personalBests.size() >= MAX_PERSONAL_BESTS)
+			{
+				break;
+			}
 			if (key.startsWith(PB_PREFIX))
 			{
 				addPersonalBest(personalBests, key.substring(PB_PREFIX.length()), properties.getProperty(key));
@@ -91,7 +106,7 @@ public class OptInSyncService
 	{
 		String boss = bossName == null ? "" : bossName.trim().replace('_', ' ');
 		long seconds = parseLong(value);
-		if (!boss.isEmpty() && seconds > 0)
+		if (!boss.isEmpty() && boss.length() <= MAX_BOSS_NAME_LENGTH && seconds > 0)
 		{
 			personalBests.put(boss, seconds);
 		}

@@ -1,6 +1,7 @@
 package com.runeversus;
 
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.Collections;
@@ -47,5 +48,19 @@ public class MonthlyLeagueArchiveStoreTest
 		Assert.assertEquals("Alice", restored.getName());
 		Assert.assertTrue(restored.isRosterEligible());
 		Assert.assertEquals(12.5, restored.getEhpGained(), 0.001);
+	}
+
+	@Test
+	public void ignoresOversizedArchiveFiles() throws Exception
+	{
+		File directory = temporaryFolder.newFolder("large-league");
+		File file = new File(directory, "group-139-2026-07.properties");
+		try (RandomAccessFile output = new RandomAccessFile(file, "rw"))
+		{
+			output.setLength(2L * 1024L * 1024L + 1L);
+		}
+
+		MonthlyLeagueArchiveStore store = new MonthlyLeagueArchiveStore(directory);
+		Assert.assertNull(store.load(139, YearMonth.of(2026, 7)));
 	}
 }

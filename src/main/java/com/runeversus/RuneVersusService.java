@@ -69,8 +69,19 @@ public class RuneVersusService
 
 	public CompletableFuture<DuelResult> compare(String leftName, String rightName)
 	{
-		String left = cleanName(leftName);
-		String right = cleanName(rightName);
+		final String left;
+		final String right;
+		try
+		{
+			left = OsrsPlayerName.requireValid(leftName);
+			right = OsrsPlayerName.requireValid(rightName);
+		}
+		catch (IllegalArgumentException ex)
+		{
+			CompletableFuture<DuelResult> failed = new CompletableFuture<>();
+			failed.completeExceptionally(ex);
+			return failed;
+		}
 		return CompletableFuture.supplyAsync(() ->
 		{
 			try
@@ -163,6 +174,7 @@ public class RuneVersusService
 		{
 			Instant fetchedAt = Instant.now();
 			Instant startsAt = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+			Instant rosterGraceEnd = startsAt.plus(Duration.ofHours(72));
 			Instant seasonEnd = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 			Instant queryEnd = fetchedAt.isBefore(seasonEnd) ? fetchedAt : seasonEnd;
 			if (!queryEnd.isAfter(startsAt))
@@ -184,8 +196,9 @@ public class RuneVersusService
 				List<MonthlyLeagueParticipant> participants = mergeMonthlyParticipants(
 					startsAt, previous, gains, memberships);
 				boolean finalized = !fetchedAt.isBefore(seasonEnd);
-				Instant frozenAt = previous == null || previous.getFrozenAt() == null
-					? fetchedAt : previous.getFrozenAt();
+				Instant frozenAt = previous != null && previous.getFrozenAt() != null
+					? previous.getFrozenAt()
+					: !fetchedAt.isBefore(rosterGraceEnd) ? fetchedAt : null;
 				Instant finalizedAt = finalized ? fetchedAt : null;
 				monthlyLeagueArchiveStore.save(
 					groupId, month, frozenAt, finalizedAt, participants);
@@ -212,6 +225,7 @@ public class RuneVersusService
 		List<MonthlyLeagueMembership> memberships)
 	{
 		Instant graceEnd = startsAt.plus(Duration.ofHours(72));
+		boolean rosterFrozen = previous != null && previous.getFrozenAt() != null;
 		Map<String, MonthlyLeagueParticipant> previousByKey = new LinkedHashMap<>();
 		if (previous != null)
 		{
@@ -241,11 +255,11 @@ public class RuneVersusService
 				Instant joinedAt = old != null && old.getJoinedAt() != null
 					? old.getJoinedAt() : membership == null ? null : membership.getJoinedAt();
 				boolean eligibleAtFreeze;
-				if (old != null)
+				if (old != null && rosterFrozen)
 				{
 					eligibleAtFreeze = old.isRosterEligible();
 				}
-				else if (previous != null)
+				else if (rosterFrozen)
 				{
 					eligibleAtFreeze = false;
 				}
@@ -272,12 +286,33 @@ public class RuneVersusService
 
 		for (Map.Entry<String, MonthlyLeagueParticipant> missing : previousByKey.entrySet())
 		{
-			merged.putIfAbsent(missing.getKey(), missing.getValue());
+			MonthlyLeagueMembership membership = membershipsByKey.remove(missing.getKey());
+			if (rosterFrozen || membership != null)
+			{
+				MonthlyLeagueParticipant old = missing.getValue();
+				boolean eligible = rosterFrozen
+					? old.isRosterEligible()
+					: old.getJoinedAt() != null
+						&& old.getTrackedFrom() != null
+						&& !old.getJoinedAt().isAfter(graceEnd)
+						&& !old.getTrackedFrom().isAfter(graceEnd);
+				merged.putIfAbsent(missing.getKey(), new MonthlyLeagueParticipant(
+					old.getPlayerId(),
+					old.getName(),
+					old.getAccountType(),
+					old.getEhpGained(),
+					old.getEhbGained(),
+					old.getCollectionsGained(),
+					old.getTrackedFrom(),
+					old.getTrackedUntil(),
+					old.getJoinedAt(),
+					eligible));
+			}
 		}
 		for (MonthlyLeagueMembership membership : membershipsByKey.values())
 		{
 			String key = participantKey(membership.getPlayerId(), membership.getName());
-			boolean frozenCandidate = previous == null
+			boolean frozenCandidate = !rosterFrozen
 				&& membership.getJoinedAt() != null
 				&& !membership.getJoinedAt().isAfter(graceEnd);
 			merged.putIfAbsent(key, new MonthlyLeagueParticipant(

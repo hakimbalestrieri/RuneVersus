@@ -289,7 +289,9 @@ public class MonthlyLeagueSeason
 
 	private static String key(MonthlyLeagueParticipant participant)
 	{
-		return participant.getName().toLowerCase(Locale.ROOT);
+		return participant.getPlayerId() > 0L
+			? "id:" + participant.getPlayerId()
+			: "name:" + participant.getName().toLowerCase(Locale.ROOT);
 	}
 
 	private static double round(double value)

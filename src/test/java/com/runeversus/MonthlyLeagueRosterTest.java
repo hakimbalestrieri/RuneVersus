@@ -12,7 +12,7 @@ public class MonthlyLeagueRosterTest
 	private static final Instant START = Instant.parse("2026-07-01T00:00:00Z");
 
 	@Test
-	public void firstCaptureFreezesOnlyVerifiedEarlyMembers()
+	public void firstCaptureMarksOnlyVerifiedEarlyMembersAsEligible()
 	{
 		List<MonthlyLeagueParticipant> gains = Arrays.asList(
 			gain(1L, "Early", START.plusSeconds(3_600L)),
@@ -25,6 +25,28 @@ public class MonthlyLeagueRosterTest
 
 		Assert.assertTrue(find(merged, "Early").isRosterEligible());
 		Assert.assertFalse(find(merged, "Unknown").isRosterEligible());
+	}
+
+	@Test
+	public void capturesEligibleMembersWhoJoinDuringGraceBeforeRosterFreeze()
+	{
+		MonthlyLeagueParticipant early = new MonthlyLeagueParticipant(
+			1L, "Early", "regular", 1, 1, 0,
+			START, START.plusSeconds(3_600L), START.minusSeconds(3_600L), true);
+		MonthlyLeagueArchiveStore.Archive previous = new MonthlyLeagueArchiveStore.Archive(
+			null, null, Collections.singletonList(early));
+		List<MonthlyLeagueParticipant> gains = Arrays.asList(
+			gain(1L, "Early", START),
+			gain(2L, "Grace", START.plusSeconds(2 * 86_400L)));
+		List<MonthlyLeagueMembership> memberships = Arrays.asList(
+			new MonthlyLeagueMembership(1L, "Early", "regular", START.minusSeconds(3_600L)),
+			new MonthlyLeagueMembership(2L, "Grace", "regular", START.plusSeconds(2 * 86_400L)));
+
+		List<MonthlyLeagueParticipant> merged = RuneVersusService.mergeMonthlyParticipants(
+			START, previous, gains, memberships);
+
+		Assert.assertTrue(find(merged, "Early").isRosterEligible());
+		Assert.assertTrue(find(merged, "Grace").isRosterEligible());
 	}
 
 	@Test
@@ -58,7 +80,7 @@ public class MonthlyLeagueRosterTest
 		Assert.assertTrue(pending.isRosterEligible());
 
 		MonthlyLeagueArchiveStore.Archive previous = new MonthlyLeagueArchiveStore.Archive(
-			START.plusSeconds(3_600L), null, first);
+			null, null, first);
 		List<MonthlyLeagueParticipant> second = RuneVersusService.mergeMonthlyParticipants(
 			START, previous,
 			Collections.singletonList(gain(3L, "Pending", START.plusSeconds(2 * 3_600L))),

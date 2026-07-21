@@ -1,8 +1,8 @@
 package com.runeversus;
 
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 public class SyncedPlayerData
 {
@@ -20,7 +20,9 @@ public class SyncedPlayerData
 		long collectionItems,
 		CombatAchievementTier combatAchievementTier)
 	{
-		this.personalBests = Collections.unmodifiableMap(new LinkedHashMap<>(personalBests));
+		TreeMap<String, Long> normalizedBests = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+		normalizedBests.putAll(personalBests);
+		this.personalBests = Collections.unmodifiableMap(normalizedBests);
 		this.collectionItems = collectionItems;
 		this.combatAchievementTier = combatAchievementTier == null
 			? CombatAchievementTier.UNKNOWN

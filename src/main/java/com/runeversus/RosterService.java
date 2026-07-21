@@ -1,7 +1,6 @@
 package com.runeversus;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -42,7 +41,7 @@ public class RosterService
 			{
 				if (member.getName() != null)
 				{
-					names.add(clean(member.getName()));
+					addCleanName(names, member.getName());
 				}
 			}
 		}
@@ -59,7 +58,7 @@ public class RosterService
 			{
 				if (member.getName() != null)
 				{
-					names.add(clean(member.getName()));
+					addCleanName(names, member.getName());
 				}
 			}
 		}
@@ -69,8 +68,17 @@ public class RosterService
 	private static List<String> sorted(Set<String> names)
 	{
 		List<String> out = new ArrayList<>(names);
-		out.sort(Comparator.comparing(String::toLowerCase));
+		out.sort(String.CASE_INSENSITIVE_ORDER);
 		return out;
+	}
+
+	private static void addCleanName(Set<String> names, String name)
+	{
+		String cleaned = clean(name);
+		if (!cleaned.isEmpty())
+		{
+			names.add(cleaned);
+		}
 	}
 
 	private static String clean(String name)

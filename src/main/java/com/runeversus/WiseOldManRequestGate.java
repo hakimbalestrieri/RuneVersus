@@ -1,6 +1,9 @@
 package com.runeversus;
 
 import java.io.IOException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.LongSupplier;
@@ -11,6 +14,7 @@ final class WiseOldManRequestGate
 	private static final long DEFAULT_WINDOW_MILLIS = 60_000L;
 	private static final long DEFAULT_MIN_SPACING_MILLIS = 250L;
 	private static final long DEFAULT_BACKOFF_MILLIS = 60_000L;
+	private static final long MAX_BACKOFF_SECONDS = 3_600L;
 
 	private final int maxRequests;
 	private final long windowMillis;
@@ -79,8 +83,8 @@ final class WiseOldManRequestGate
 
 	synchronized WiseOldManRateLimitException backOff(String retryAfterHeader)
 	{
-		long retrySeconds = parseRetryAfter(retryAfterHeader);
 		long now = clock.getAsLong();
+		long retrySeconds = parseRetryAfter(retryAfterHeader, now);
 		blockedUntil = Math.max(blockedUntil, now + retrySeconds * 1_000L);
 		return new WiseOldManRateLimitException(retrySeconds);
 	}
@@ -93,20 +97,35 @@ final class WiseOldManRequestGate
 		}
 	}
 
-	private static long parseRetryAfter(String header)
+	private static long parseRetryAfter(String header, long now)
 	{
 		if (header != null)
 		{
+			String value = header.trim();
 			try
 			{
-				return Math.max(1L, Long.parseLong(header.trim()));
+				return clampRetrySeconds(Long.parseLong(value));
 			}
 			catch (NumberFormatException ignored)
 			{
-				// HTTP-date values are uncommon on WOM; use a conservative fallback.
+				try
+				{
+					long retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
+						.toInstant().toEpochMilli();
+					return clampRetrySeconds(secondsUntil(retryAt, now));
+				}
+				catch (DateTimeParseException ignoredDate)
+				{
+					// Fall through to a conservative default for malformed server values.
+				}
 			}
 		}
 		return DEFAULT_BACKOFF_MILLIS / 1_000L;
+	}
+
+	private static long clampRetrySeconds(long seconds)
+	{
+		return Math.min(MAX_BACKOFF_SECONDS, Math.max(1L, seconds));
 	}
 
 	private static long secondsUntil(long target, long now)

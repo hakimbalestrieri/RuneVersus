@@ -14,7 +14,7 @@ public final class RuneVersusChatFormatter
 	public static String format(DuelResult result)
 	{
 		MetricResult collectionLog = result.getCollectionLogMetric();
-		long xpDifference = result.getLeftTotalXp() - result.getRightTotalXp();
+		long xpDifference = signedDifference(result.getLeftTotalXp(), result.getRightTotalXp());
 
 		int leftScore = score(PlayerSide.LEFT, xpDifference, collectionLog);
 		int rightScore = score(PlayerSide.RIGHT, xpDifference, collectionLog);
@@ -59,7 +59,7 @@ public final class RuneVersusChatFormatter
 			return "0";
 		}
 
-		long absolute = Math.abs(difference);
+		long absolute = difference == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(difference);
 		String sign = difference > 0 ? "+" : "-";
 		if (absolute >= 1_000_000_000L)
 		{
@@ -74,6 +74,18 @@ public final class RuneVersusChatFormatter
 			return sign + String.format(Locale.ROOT, "%.1fK", absolute / 1_000.0);
 		}
 		return sign + absolute;
+	}
+
+	private static long signedDifference(long left, long right)
+	{
+		try
+		{
+			return Math.subtractExact(left, right);
+		}
+		catch (ArithmeticException ex)
+		{
+			return left > right ? Long.MAX_VALUE : -Long.MAX_VALUE;
+		}
 	}
 
 	private static String formatCollectionLog(MetricResult metric)

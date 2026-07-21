@@ -7,6 +7,7 @@ import com.runeversus.model.PlayerProfile;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -74,7 +75,8 @@ public class VersusComparisonPanelPreview
 				new MetricResult(MetricType.COMBAT_ACHIEVEMENTS, "Combat Achievements", 5, 6)),
 			Collections.singletonList(new MetricResult(MetricType.FORM_DAY, "Overall", 2_840_000, 1_120_000)),
 			Collections.singletonList(new MetricResult(MetricType.FORM_WEEK, "Overall", 8_120_000, 11_480_000)),
-			Collections.singletonList(new MetricResult(MetricType.FORM_MONTH, "Overall", 44_800_000, 39_250_000)));
+			Collections.singletonList(new MetricResult(MetricType.FORM_MONTH, "Overall", 44_800_000, 39_250_000)),
+			Instant.parse("2026-07-21T17:00:00Z"));
 	}
 
 	private static void layout(java.awt.Container root)

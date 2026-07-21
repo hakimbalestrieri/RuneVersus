@@ -44,7 +44,21 @@ public class MetricResult
 
 	public long getGap()
 	{
-		return Math.abs(leftValue - rightValue);
+		return absoluteDifference(leftValue, rightValue);
+	}
+
+	public static long absoluteDifference(long left, long right)
+	{
+		final long difference;
+		try
+		{
+			difference = Math.subtractExact(left, right);
+		}
+		catch (ArithmeticException ex)
+		{
+			return Long.MAX_VALUE;
+		}
+		return difference == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(difference);
 	}
 
 	public boolean isLowerIsBetter()

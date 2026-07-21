@@ -12,8 +12,8 @@ final class MonthlyLeagueMembership
 	MonthlyLeagueMembership(long playerId, String name, String accountType, Instant joinedAt)
 	{
 		this.playerId = Math.max(0L, playerId);
-		this.name = name == null ? "" : name.trim();
-		this.accountType = accountType == null ? "unknown" : accountType.trim();
+		this.name = MonthlyLeagueParticipant.normalizePlayerName(name);
+		this.accountType = MonthlyLeagueParticipant.normalizeAccountType(accountType);
 		this.joinedAt = joinedAt;
 	}
 

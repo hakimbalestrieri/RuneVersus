@@ -97,10 +97,15 @@ public class ClanProgressGains
 			{
 				if (value != null && value > 0L)
 				{
-					total += value;
+					total = saturatedAdd(total, value);
 				}
 			}
 		}
 		return total;
+	}
+
+	static long saturatedAdd(long left, long right)
+	{
+		return right > 0L && left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 }

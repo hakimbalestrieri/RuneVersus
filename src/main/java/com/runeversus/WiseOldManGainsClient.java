@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,8 +15,6 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.client.hiscore.HiscoreSkill;
@@ -23,23 +22,28 @@ import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
+import okio.BufferedSource;
 
 @Singleton
 public class WiseOldManGainsClient
 {
-	private static final String BASE_URL = "https://api.wiseoldman.net/v2/players/";
-	private static final String GROUPS_BASE_URL = "https://api.wiseoldman.net/v2/groups/";
+	private static final HttpUrl PLAYERS_URL = HttpUrl.parse("https://api.wiseoldman.net/v2/players/");
+	private static final HttpUrl GROUPS_URL = HttpUrl.parse("https://api.wiseoldman.net/v2/groups/");
 	private static final String USER_AGENT = "RuneVersus/0.1 (+https://github.com/hakimbalestrieri/RuneVersus)";
 	private static final Duration PLAYER_CACHE_TTL = Duration.ofMinutes(5);
 	private static final Duration GROUP_CACHE_TTL = Duration.ofMinutes(10);
 	private static final Duration LEAGUE_CACHE_TTL = Duration.ofMinutes(30);
 	private static final int MAX_CACHE_ENTRIES = 512;
+	private static final int REQUEST_LOCK_STRIPES = 64;
+	private static final int MAX_ARRAY_ENTRIES = 2_000;
+	private static final long MAX_RESPONSE_BYTES = 16L * 1024L * 1024L;
 	private static final Map<String, HiscoreSkill> SKILL_BY_WOM_METRIC = buildSkillMap();
 
 	private final OkHttpClient okHttpClient;
 	private final Gson gson;
 	private final WiseOldManRequestGate requestGate;
-	private final ConcurrentMap<String, Object> requestLocks = new ConcurrentHashMap<>();
+	private final Object[] requestLocks = createRequestLocks();
 	private final Map<String, CachedJson> responseCache = Collections.synchronizedMap(
 		new LinkedHashMap<String, CachedJson>(64, 0.75f, true)
 		{
@@ -65,11 +69,19 @@ public class WiseOldManGainsClient
 
 	public Map<HiscoreSkill, Long> getSkillExperienceGains(String username, String period) throws IOException
 	{
-		HttpUrl url = HttpUrl.parse(BASE_URL + urlName(username) + "/gained");
-		if (url == null)
+		final String playerName;
+		try
 		{
-			throw new IOException("Invalid Wise Old Man URL");
+			playerName = OsrsPlayerName.requireValid(username);
 		}
+		catch (IllegalArgumentException ex)
+		{
+			throw new IOException(ex.getMessage(), ex);
+		}
+		HttpUrl url = PLAYERS_URL.newBuilder()
+			.addPathSegment(playerName)
+			.addPathSegment("gained")
+			.build();
 
 		JsonObject root = fetchJsonObject(
 			url.newBuilder().addQueryParameter("period", period).build(), PLAYER_CACHE_TTL, false);
@@ -88,10 +100,11 @@ public class WiseOldManGainsClient
 				continue;
 			}
 
-			JsonObject experience = entry.getValue().getAsJsonObject().getAsJsonObject("experience");
-			if (experience != null && experience.has("gained") && !experience.get("gained").isJsonNull())
+			JsonObject experience = object(entry.getValue().getAsJsonObject(), "experience");
+			Long gained = optionalLong(experience, "gained");
+			if (gained != null)
 			{
-				gains.put(skill, experience.get("gained").getAsLong());
+				gains.put(skill, gained);
 			}
 		}
 		return gains;
@@ -117,11 +130,7 @@ public class WiseOldManGainsClient
 			return getGroupAllTime(groupId, forceRefresh);
 		}
 
-		HttpUrl url = HttpUrl.parse(GROUPS_BASE_URL + groupId + "/bulk-gained");
-		if (url == null)
-		{
-			throw new IOException("Invalid Wise Old Man group URL");
-		}
+		HttpUrl url = groupUrl(groupId, "bulk-gained");
 
 		HttpUrl requestUrl = url.newBuilder().addQueryParameter("period", period.getApiValue()).build();
 		return parseGroupGains(fetchJsonArray(requestUrl, GROUP_CACHE_TTL, forceRefresh));
@@ -150,11 +159,7 @@ public class WiseOldManGainsClient
 			throw new IOException("Monthly league date range is invalid");
 		}
 
-		HttpUrl url = HttpUrl.parse(GROUPS_BASE_URL + groupId + "/bulk-gained");
-		if (url == null)
-		{
-			throw new IOException("Invalid Wise Old Man group URL");
-		}
+		HttpUrl url = groupUrl(groupId, "bulk-gained");
 
 		HttpUrl requestUrl = url.newBuilder()
 			.addQueryParameter("startDate", startDate.toString())
@@ -172,21 +177,20 @@ public class WiseOldManGainsClient
 			throw new IOException("Wise Old Man group ID must be greater than zero");
 		}
 
-		HttpUrl url = HttpUrl.parse(GROUPS_BASE_URL + groupId);
-		if (url == null)
+		HttpUrl url = groupUrl(groupId);
+		JsonObject root = fetchJsonObject(url, GROUP_CACHE_TTL, forceRefresh);
+		JsonArray memberships = root.has("memberships") && root.get("memberships").isJsonArray()
+			? root.getAsJsonArray("memberships") : null;
+		if (memberships != null && memberships.size() > MAX_ARRAY_ENTRIES)
 		{
-			throw new IOException("Invalid Wise Old Man group URL");
+			throw new IOException("Wise Old Man returned too many group members");
 		}
-		return parseGroupMemberships(fetchJsonObject(url, GROUP_CACHE_TTL, forceRefresh));
+		return parseGroupMemberships(root);
 	}
 
 	private Map<String, ClanProgressGains> getGroupAllTime(int groupId, boolean forceRefresh) throws IOException
 	{
-		HttpUrl url = HttpUrl.parse(GROUPS_BASE_URL + groupId + "/bulk-hiscores");
-		if (url == null)
-		{
-			throw new IOException("Invalid Wise Old Man group URL");
-		}
+		HttpUrl url = groupUrl(groupId, "bulk-hiscores");
 
 		return parseGroupAllTime(fetchJsonArray(url, GROUP_CACHE_TTL, forceRefresh));
 	}
@@ -198,7 +202,12 @@ public class WiseOldManGainsClient
 		{
 			throw new IOException("Wise Old Man returned an unexpected response");
 		}
-		return json.getAsJsonArray();
+		JsonArray array = json.getAsJsonArray();
+		if (array.size() > MAX_ARRAY_ENTRIES)
+		{
+			throw new IOException("Wise Old Man returned too many group members");
+		}
+		return array;
 	}
 
 	private JsonObject fetchJsonObject(HttpUrl url, Duration ttl, boolean forceRefresh) throws IOException
@@ -223,66 +232,93 @@ public class WiseOldManGainsClient
 			}
 		}
 
-		Object requestLock = requestLocks.computeIfAbsent(cacheKey, ignored -> new Object());
-		try
+		Object requestLock = requestLocks[(cacheKey.hashCode() & Integer.MAX_VALUE) % requestLocks.length];
+		synchronized (requestLock)
 		{
-			synchronized (requestLock)
+			if (!forceRefresh)
 			{
-				if (!forceRefresh)
+				JsonElement cached = cached(cacheKey, ttl);
+				if (cached != null)
 				{
-					JsonElement cached = cached(cacheKey, ttl);
-					if (cached != null)
-					{
-						return cached;
-					}
-				}
-
-				requestGate.acquire();
-				Request request = new Request.Builder()
-					.url(url)
-					.header("Accept", "application/json")
-					.header("User-Agent", USER_AGENT)
-					.build();
-				try (Response response = okHttpClient.newCall(request).execute())
-				{
-					if (response.code() == 429)
-					{
-						throw requestGate.backOff(response.header("Retry-After"));
-					}
-					if (!response.isSuccessful() || response.body() == null)
-					{
-						throw new IOException("Wise Old Man request failed (HTTP " + response.code() + ")");
-					}
-
-					JsonElement json = gson.fromJson(response.body().charStream(), JsonElement.class);
-					if (json == null || json.isJsonNull())
-					{
-						throw new IOException("Wise Old Man returned an empty response");
-					}
-					responseCache.put(cacheKey, new CachedJson(json, Instant.now()));
-					return json;
+					return cached;
 				}
 			}
+
+			requestGate.acquire();
+			Request request = new Request.Builder()
+				.url(url)
+				.header("Accept", "application/json")
+				.header("User-Agent", USER_AGENT)
+				.build();
+			try (Response response = okHttpClient.newCall(request).execute())
+			{
+				if (response.code() == 429)
+				{
+					throw requestGate.backOff(response.header("Retry-After"));
+				}
+				if (!response.isSuccessful() || response.body() == null)
+				{
+					throw new IOException("Wise Old Man request failed (HTTP " + response.code() + ")");
+				}
+
+				ResponseBody body = response.body();
+				long declaredLength = body.contentLength();
+				if (declaredLength > MAX_RESPONSE_BYTES)
+				{
+					throw new IOException("Wise Old Man response is too large");
+				}
+				BufferedSource source = body.source();
+				source.request(MAX_RESPONSE_BYTES + 1L);
+				if (source.getBuffer().size() > MAX_RESPONSE_BYTES)
+				{
+					throw new IOException("Wise Old Man response is too large");
+				}
+
+				final JsonElement json;
+				try
+				{
+					json = gson.fromJson(source.readUtf8(), JsonElement.class);
+				}
+				catch (JsonParseException ex)
+				{
+					throw new IOException("Wise Old Man returned invalid JSON", ex);
+				}
+				if (json == null || json.isJsonNull())
+				{
+					throw new IOException("Wise Old Man returned an empty response");
+				}
+				responseCache.put(cacheKey, new CachedJson(json, Instant.now()));
+				return json;
+			}
 		}
-		finally
+	}
+
+	private static Object[] createRequestLocks()
+	{
+		Object[] locks = new Object[REQUEST_LOCK_STRIPES];
+		for (int index = 0; index < locks.length; index++)
 		{
-			requestLocks.remove(cacheKey, requestLock);
+			locks[index] = new Object();
 		}
+		return locks;
 	}
 
 	private JsonElement cached(String cacheKey, Duration ttl)
 	{
-		CachedJson cached = responseCache.get(cacheKey);
-		if (cached == null)
+		synchronized (responseCache)
 		{
-			return null;
+			CachedJson cached = responseCache.get(cacheKey);
+			if (cached == null)
+			{
+				return null;
+			}
+			if (Duration.between(cached.storedAt, Instant.now()).compareTo(ttl) >= 0)
+			{
+				responseCache.remove(cacheKey);
+				return null;
+			}
+			return cached.json;
 		}
-		if (Duration.between(cached.storedAt, Instant.now()).compareTo(ttl) >= 0)
-		{
-			responseCache.remove(cacheKey);
-			return null;
-		}
-		return cached.json;
 	}
 
 	static Map<String, ClanProgressGains> parseGroupGains(JsonArray root)
@@ -336,7 +372,7 @@ public class WiseOldManGainsClient
 					String bossName = BossKcRegistry.knownDisplayName(metric);
 					if (bossName != null && gained > 0L)
 					{
-						bossKc.merge(bossName, gained, Long::sum);
+						bossKc.merge(bossName, gained, ClanProgressGains::saturatedAdd);
 					}
 				}
 			}
@@ -522,15 +558,28 @@ public class WiseOldManGainsClient
 		return child.getAsJsonObject(second);
 	}
 
-	private static String urlName(String username)
+	private static HttpUrl groupUrl(int groupId, String... segments)
 	{
-		return username == null ? "" : username.trim().replace(" ", "%20");
+		HttpUrl.Builder builder = GROUPS_URL.newBuilder().addPathSegment(String.valueOf(groupId));
+		for (String segment : segments)
+		{
+			builder.addPathSegment(segment);
+		}
+		return builder.build();
 	}
 
 	private static String playerName(JsonObject player)
 	{
 		String displayName = stringValue(player, "displayName");
-		return displayName.isEmpty() ? stringValue(player, "username") : displayName;
+		String candidate = displayName.isEmpty() ? stringValue(player, "username") : displayName;
+		try
+		{
+			return OsrsPlayerName.requireValid(candidate);
+		}
+		catch (IllegalArgumentException ex)
+		{
+			return "";
+		}
 	}
 
 	private static String stringValue(JsonObject object, String key)
@@ -539,22 +588,41 @@ public class WiseOldManGainsClient
 		{
 			return "";
 		}
-		return object.get(key).getAsString().trim();
+		JsonElement value = object.get(key);
+		if (!value.isJsonPrimitive())
+		{
+			return "";
+		}
+		try
+		{
+			return value.getAsString().trim();
+		}
+		catch (RuntimeException ex)
+		{
+			return "";
+		}
 	}
 
 	private static long longValue(JsonObject object, String key)
 	{
-		if (object == null || !object.has(key) || object.get(key).isJsonNull())
+		Long value = optionalLong(object, key);
+		return value == null ? 0L : value;
+	}
+
+	private static Long optionalLong(JsonObject object, String key)
+	{
+		if (object == null || !object.has(key) || object.get(key).isJsonNull()
+			|| !object.get(key).isJsonPrimitive())
 		{
-			return 0L;
+			return null;
 		}
 		try
 		{
 			return object.get(key).getAsLong();
 		}
-		catch (NumberFormatException ex)
+		catch (RuntimeException ex)
 		{
-			return 0L;
+			return null;
 		}
 	}
 
@@ -564,11 +632,17 @@ public class WiseOldManGainsClient
 		{
 			return 0.0;
 		}
+		JsonElement value = object.get(key);
+		if (!value.isJsonPrimitive())
+		{
+			return 0.0;
+		}
 		try
 		{
-			return object.get(key).getAsDouble();
+			double parsed = value.getAsDouble();
+			return Double.isFinite(parsed) ? parsed : 0.0;
 		}
-		catch (NumberFormatException ex)
+		catch (RuntimeException ex)
 		{
 			return 0.0;
 		}

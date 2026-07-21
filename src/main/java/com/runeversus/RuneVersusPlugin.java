@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -106,8 +107,12 @@ public class RuneVersusPlugin extends Plugin
 
 	private final Map<Integer, String> playerIndexName = new HashMap<>();
 	private final ConcurrentMap<String, Long> incomingVsBySender = new ConcurrentHashMap<>();
+	private final RequestGeneration comparisonRequests = new RequestGeneration();
+	private final RequestGeneration clanRequests = new RequestGeneration();
+	private final RequestGeneration leagueRequests = new RequestGeneration();
 	private RuneVersusPanel panel;
 	private NavigationButton navButton;
+	private volatile boolean running;
 	private volatile String localPlayerName = "";
 	private volatile DuelResult lastResult;
 	private volatile YearMonth selectedLeagueMonth = YearMonth.now(ZoneOffset.UTC);
@@ -122,6 +127,7 @@ public class RuneVersusPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		running = true;
 		panel = new RuneVersusPanel(new RuneVersusIcons(skillIconManager, itemManager, spriteManager));
 		panel.setCompareCallback(this::compare);
 		panel.setRosterCallback(this::loadRoster);
@@ -154,8 +160,15 @@ public class RuneVersusPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		running = false;
+		comparisonRequests.invalidate();
+		clanRequests.invalidate();
+		leagueRequests.invalidate();
 		chatCommandManager.unregisterCommand(VS_COMMAND);
-		clientToolbar.removeNavigation(navButton);
+		if (navButton != null)
+		{
+			clientToolbar.removeNavigation(navButton);
+		}
 		removePlayerMenuItems();
 		if (panel != null)
 		{
@@ -166,6 +179,8 @@ public class RuneVersusPlugin extends Plugin
 		nextIncomingVsAt = 0L;
 		lastResult = null;
 		localPlayerName = "";
+		navButton = null;
+		panel = null;
 	}
 
 	@Subscribe
@@ -175,7 +190,7 @@ public class RuneVersusPlugin extends Plugin
 		{
 			return;
 		}
-		if ("openInterfaceOnComparison".equals(event.getKey()) && !config.openInterfaceOnComparison())
+		if (panel != null && "openInterfaceOnComparison".equals(event.getKey()) && !config.openInterfaceOnComparison())
 		{
 			panel.hideVersusWindow();
 		}
@@ -366,6 +381,11 @@ public class RuneVersusPlugin extends Plugin
 
 	private void compare(String left, String right)
 	{
+		if (!running || panel == null)
+		{
+			return;
+		}
+		long request = comparisonRequests.next();
 		String leftName = clean(left);
 		String rightName = clean(right);
 		if (leftName.isEmpty() || rightName.isEmpty())
@@ -387,9 +407,19 @@ public class RuneVersusPlugin extends Plugin
 			openPanel();
 		}
 		versusService.compare(leftName, rightName)
-			.thenAccept(result -> handleDuelResult(result, separateWindow))
+			.thenAccept(result ->
+			{
+				if (isCurrentComparison(request))
+				{
+					handleDuelResult(result, separateWindow, request);
+				}
+			})
 			.exceptionally(ex ->
 			{
+				if (!isCurrentComparison(request))
+				{
+					return null;
+				}
 				String message = "Comparison failed: " + readableError(ex);
 				panel.setStatus(message);
 				panel.showVersusError(message, separateWindow);
@@ -401,17 +431,29 @@ public class RuneVersusPlugin extends Plugin
 	private void compareForIncomingChat(ChatMessage chatMessage, String leftName, String rightName)
 	{
 		versusService.compare(leftName, rightName)
-			.thenAccept(result -> setChatCommandResponse(chatMessage, RuneVersusChatFormatter.format(result)))
+			.thenAccept(result ->
+			{
+				if (running)
+				{
+					setChatCommandResponse(chatMessage, RuneVersusChatFormatter.format(result));
+				}
+			})
 			.exceptionally(ex ->
 			{
-				setChatCommandResponse(chatMessage, "[RuneVersus] Comparison failed: " + readableError(ex));
+				if (running)
+				{
+					setChatCommandResponse(chatMessage, "[RuneVersus] Comparison failed: " + readableError(ex));
+				}
 				return null;
 			});
 	}
 
-	private void handleDuelResult(DuelResult result, boolean separateWindow)
+	private void handleDuelResult(DuelResult result, boolean separateWindow, long request)
 	{
-		lastResult = result;
+		if (!isCurrentComparison(request))
+		{
+			return;
+		}
 		String verdict = verdict(result);
 		File exported = null;
 		if (config.autoExportCard())
@@ -422,10 +464,18 @@ public class RuneVersusPlugin extends Plugin
 			}
 			catch (IOException ex)
 			{
-				panel.setStatus("Compared, but PNG export failed: " + ex.getMessage());
+				if (isCurrentComparison(request))
+				{
+					panel.setStatus("Compared, but PNG export failed: " + ex.getMessage());
+				}
 			}
 		}
 
+		if (!isCurrentComparison(request))
+		{
+			return;
+		}
+		lastResult = result;
 		panel.showResult(result, exported, verdict);
 		panel.showVersusResult(result, exported, verdict, separateWindow);
 		sendResultMessage(result);
@@ -433,6 +483,10 @@ public class RuneVersusPlugin extends Plugin
 
 	private void exportLastCard()
 	{
+		if (!running || panel == null)
+		{
+			return;
+		}
 		DuelResult result = lastResult;
 		if (result == null)
 		{
@@ -462,6 +516,10 @@ public class RuneVersusPlugin extends Plugin
 
 		clientThread.invokeLater(() ->
 		{
+			if (!running || panel == null)
+			{
+				return;
+			}
 			List<String> names;
 			String label;
 			switch (kind)
@@ -492,6 +550,10 @@ public class RuneVersusPlugin extends Plugin
 		panel.setStatus("Preparing " + socialActionLabel(action) + "...");
 		clientThread.invokeLater(() ->
 		{
+			if (!running || panel == null)
+			{
+				return;
+			}
 			switch (action)
 			{
 				case MONTHLY_LEAGUE:
@@ -516,6 +578,11 @@ public class RuneVersusPlugin extends Plugin
 
 	private void analyzeClanProgress(boolean exportCard, boolean forceRefresh)
 	{
+		if (!running || panel == null)
+		{
+			return;
+		}
+		long request = clanRequests.next();
 		int groupId = wiseOldManGroupId();
 		if (groupId <= 0)
 		{
@@ -537,6 +604,10 @@ public class RuneVersusPlugin extends Plugin
 		versusService.analyzeClanProgress("Clan progress", groupId, forceRefresh)
 			.thenAccept(leaderboard ->
 			{
+				if (!isCurrentClanRequest(request))
+				{
+					return;
+				}
 				if (leaderboard.getPlayers().isEmpty())
 				{
 					String message = "No tracked players found in WOM group #" + groupId + ".";
@@ -561,6 +632,10 @@ public class RuneVersusPlugin extends Plugin
 			})
 			.exceptionally(ex ->
 			{
+				if (!isCurrentClanRequest(request))
+				{
+					return null;
+				}
 				String message = "Clan progress failed: " + readableError(ex);
 				panel.setStatus(message);
 				if (!exportCard)
@@ -579,6 +654,11 @@ public class RuneVersusPlugin extends Plugin
 
 	private void analyzeMonthlyLeague(YearMonth month, boolean forceRefresh)
 	{
+		if (!running || panel == null)
+		{
+			return;
+		}
+		long request = leagueRequests.next();
 		int groupId = wiseOldManGroupId();
 		selectedLeagueMonth = month == null ? YearMonth.now(ZoneOffset.UTC) : month;
 		if (groupId <= 0)
@@ -596,6 +676,10 @@ public class RuneVersusPlugin extends Plugin
 		versusService.analyzeMonthlyLeague(groupId, selectedLeagueMonth, forceRefresh)
 			.thenAccept(season ->
 			{
+				if (!isCurrentLeagueRequest(request))
+				{
+					return;
+				}
 				if (season.getStandings().isEmpty())
 				{
 					String message = "No WOM gains were found for " + season.getLabel() + ".";
@@ -609,6 +693,10 @@ public class RuneVersusPlugin extends Plugin
 			})
 			.exceptionally(ex ->
 			{
+				if (!isCurrentLeagueRequest(request))
+				{
+					return null;
+				}
 				String message = "Monthly league failed: " + readableError(ex);
 				panel.showMonthlyLeagueError(message);
 				panel.setStatus(message);
@@ -717,7 +805,7 @@ public class RuneVersusPlugin extends Plugin
 
 	private void addClanMemberMenuEntry(String option, String playerName, String displayTarget)
 	{
-		client.createMenuEntry(-1)
+		client.getMenu().createMenuEntry(-1)
 			.setOption(option)
 			.setTarget(displayTarget == null || displayTarget.isEmpty() ? playerName : displayTarget)
 			.setType(MenuAction.RUNELITE)
@@ -742,7 +830,13 @@ public class RuneVersusPlugin extends Plugin
 
 	private void openPanel()
 	{
-		SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+		SwingUtilities.invokeLater(() ->
+		{
+			if (running && navButton != null)
+			{
+				clientToolbar.openPanel(navButton);
+			}
+		});
 	}
 
 	private static boolean isVersusPlayerMenu(String option)
@@ -752,6 +846,10 @@ public class RuneVersusPlugin extends Plugin
 
 	private void sendChatMessage(String message)
 	{
+		if (!running)
+		{
+			return;
+		}
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(message)
@@ -789,15 +887,34 @@ public class RuneVersusPlugin extends Plugin
 	{
 		clientThread.invokeLater(() ->
 		{
+			if (!running || chatMessage == null || chatMessage.getMessageNode() == null)
+			{
+				return;
+			}
 			chatMessage.getMessageNode().setRuneLiteFormatMessage(response);
 			client.refreshChat();
 		});
 	}
 
+	private boolean isCurrentComparison(long request)
+	{
+		return running && panel != null && comparisonRequests.isCurrent(request);
+	}
+
+	private boolean isCurrentClanRequest(long request)
+	{
+		return running && panel != null && clanRequests.isCurrent(request);
+	}
+
+	private boolean isCurrentLeagueRequest(long request)
+	{
+		return running && panel != null && leagueRequests.isCurrent(request);
+	}
+
 	private VsArguments parseVsArguments(String message, String defaultLeft)
 	{
 		String args = message == null ? "" : message.trim();
-		if (args.toLowerCase().startsWith(VS_COMMAND))
+		if (args.toLowerCase(Locale.ROOT).startsWith(VS_COMMAND))
 		{
 			args = args.substring(VS_COMMAND.length()).trim();
 		}

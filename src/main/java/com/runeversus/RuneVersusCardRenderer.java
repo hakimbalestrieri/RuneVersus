@@ -662,19 +662,19 @@ public class RuneVersusCardRenderer
 
 	private static String format(long value)
 	{
-		long absolute = Math.abs(value);
+		long absolute = value == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(value);
 		if (absolute >= 1_000_000_000)
 		{
-			return String.format("%.1fb", value / 1_000_000_000.0);
+			return String.format(java.util.Locale.ROOT, "%.1fb", value / 1_000_000_000.0);
 		}
 		if (absolute >= 1_000_000)
 		{
-			return String.format("%.1fm", value / 1_000_000.0);
+			return String.format(java.util.Locale.ROOT, "%.1fm", value / 1_000_000.0);
 		}
 		if (absolute >= 10_000)
 		{
-			return String.format("%.1fk", value / 1_000.0);
+			return String.format(java.util.Locale.ROOT, "%.1fk", value / 1_000.0);
 		}
-		return String.format("%,d", value);
+		return String.format(java.util.Locale.US, "%,d", value);
 	}
 }

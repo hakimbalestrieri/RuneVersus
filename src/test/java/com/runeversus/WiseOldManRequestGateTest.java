@@ -1,5 +1,8 @@
 package com.runeversus;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Assert;
 import org.junit.Test;
@@ -52,5 +55,21 @@ public class WiseOldManRequestGateTest
 
 		now.addAndGet(12_000L);
 		gate.acquire();
+	}
+
+	@Test
+	public void honorsHttpDateRetryAfterAndCapsExcessiveDelays()
+	{
+		AtomicLong now = new AtomicLong(Instant.parse("2026-07-21T10:00:00Z").toEpochMilli());
+		WiseOldManRequestGate gate = new WiseOldManRequestGate(
+			10, 60_000L, 0L, now::get, millis -> now.addAndGet(millis));
+		String retryAt = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+			Instant.ofEpochMilli(now.get() + 12_000L).atZone(ZoneOffset.UTC));
+
+		Assert.assertEquals(12L, gate.backOff(retryAt).getRetryAfterSeconds());
+
+		WiseOldManRequestGate capped = new WiseOldManRequestGate(
+			10, 60_000L, 0L, now::get, millis -> now.addAndGet(millis));
+		Assert.assertEquals(3_600L, capped.backOff("999999999999").getRetryAfterSeconds());
 	}
 }

@@ -1,6 +1,7 @@
 package com.runeversus;
 
 import com.runeversus.model.DuelResult;
+import java.util.Locale;
 
 public final class RuneVersusFlavor
 {
@@ -76,19 +77,19 @@ public final class RuneVersusFlavor
 
 	public static String format(long value)
 	{
-		long absolute = Math.abs(value);
+		long absolute = value == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(value);
 		if (absolute >= 1_000_000_000L)
 		{
-			return String.format("%.1fb", value / 1_000_000_000.0);
+			return String.format(Locale.ROOT, "%.1fb", value / 1_000_000_000.0);
 		}
 		if (absolute >= 1_000_000L)
 		{
-			return String.format("%.1fm", value / 1_000_000.0);
+			return String.format(Locale.ROOT, "%.1fm", value / 1_000_000.0);
 		}
 		if (absolute >= 10_000L)
 		{
-			return String.format("%.1fk", value / 1_000.0);
+			return String.format(Locale.ROOT, "%.1fk", value / 1_000.0);
 		}
-		return String.format("%,d", value);
+		return String.format(Locale.US, "%,d", value);
 	}
 }

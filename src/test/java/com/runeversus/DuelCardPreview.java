@@ -5,6 +5,7 @@ import com.runeversus.model.MetricResult;
 import com.runeversus.model.MetricType;
 import com.runeversus.model.PlayerProfile;
 import java.io.File;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import javax.imageio.ImageIO;
@@ -27,7 +28,8 @@ public class DuelCardPreview
 				MetricType.COLLECTION_LOG, "Collections Logged", 914, 872)),
 			Collections.singletonList(new MetricResult(MetricType.FORM_DAY, "Overall", 2_840_000, 1_120_000)),
 			Collections.singletonList(new MetricResult(MetricType.FORM_WEEK, "Overall", 8_120_000, 11_480_000)),
-			Collections.singletonList(new MetricResult(MetricType.FORM_MONTH, "Overall", 44_800_000, 39_250_000)));
+			Collections.singletonList(new MetricResult(MetricType.FORM_MONTH, "Overall", 44_800_000, 39_250_000)),
+			Instant.parse("2026-07-21T17:00:00Z"));
 
 		File out = new File(args.length == 0
 			? "build/previews/runeversus-duel-card-preview.png"

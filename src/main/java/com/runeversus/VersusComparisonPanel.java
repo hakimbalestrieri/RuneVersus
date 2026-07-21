@@ -707,7 +707,7 @@ class VersusComparisonPanel extends JPanel
 				: label + "  ·  Tie at " + RuneVersusFlavor.format(left);
 		}
 		String leader = left > right ? result.getLeft().getName() : result.getRight().getName();
-		String gap = RuneVersusFlavor.format(Math.abs(left - right));
+		String gap = RuneVersusFlavor.format(MetricResult.absoluteDifference(left, right));
 		return spaciousLayout
 			? "<html><center><b>" + escapeHtml(leader) + "</b><br><font color='#f6c55c'>+"
 				+ gap + " ahead</font></center></html>"
