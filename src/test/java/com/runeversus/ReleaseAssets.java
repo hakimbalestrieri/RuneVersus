@@ -23,7 +23,6 @@ public final class ReleaseAssets
 			new File(images, "monthly-league.png").getPath()});
 		DuelCardPreview.main(new String[]{
 			new File(images, "duel-card.png").getPath()});
-		DiscordUseCasePreview.main(new String[]{images.getPath()});
 		ImageIO.write(new RuneVersusCardRenderer().renderIcon(), "png", new File("icon.png"));
 	}
 }
