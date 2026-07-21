@@ -52,6 +52,30 @@ public class MonthlyLeagueSeasonTest
 		Assert.assertEquals("July 2026", season.getLabel());
 	}
 
+	@Test
+	public void excludesMembersWithoutVerifiedStartDates()
+	{
+		MonthlyLeagueParticipant missingDates = new MonthlyLeagueParticipant(
+			7L, "Unknown", "regular", 100, 100, 20, null, NOW, null, true);
+		MonthlyLeagueSeason season = season(missingDates);
+
+		Assert.assertFalse(standing(season, "Unknown").isEligible());
+		Assert.assertNull(season.getChampion(MonthlyLeagueMetric.OVERALL));
+	}
+
+	@Test
+	public void requiresFreshFinalSnapshotButNotForLiveStandings()
+	{
+		MonthlyLeagueParticipant stale = new MonthlyLeagueParticipant(
+			8L, "Stale", "regular", 10, 10, 1, JULY_START, NOW, JULY_START, true);
+
+		Assert.assertTrue(standing(season(stale), "Stale").isEligible());
+		MonthlyLeagueSeason finalized = new MonthlyLeagueSeason(
+			42, YearMonth.of(2026, 7), Instant.parse("2026-08-01T01:00:00Z"),
+			Arrays.asList(stale), true);
+		Assert.assertFalse(standing(finalized, "Stale").isEligible());
+	}
+
 	private static MonthlyLeagueSeason season(MonthlyLeagueParticipant... participants)
 	{
 		return new MonthlyLeagueSeason(42, YearMonth.of(2026, 7), NOW, Arrays.asList(participants));
@@ -61,13 +85,16 @@ public class MonthlyLeagueSeasonTest
 		String name, double ehp, double ehb, long clogs, long startDayOffset)
 	{
 		return new MonthlyLeagueParticipant(
+			Math.abs(name.hashCode()),
 			name,
 			"regular",
 			ehp,
 			ehb,
 			clogs,
 			JULY_START.plusSeconds(startDayOffset * 86_400L),
-			NOW.minusSeconds(3_600L));
+			NOW.minusSeconds(3_600L),
+			JULY_START.plusSeconds(startDayOffset * 86_400L),
+			true);
 	}
 
 	private static MonthlyLeagueStanding standing(MonthlyLeagueSeason season, String name)

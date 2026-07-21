@@ -48,7 +48,7 @@ class MonthlyLeaguePanel extends JPanel
 	private static final String EHP_TOOLTIP = "<html><b>EHP gained</b><br>Efficient Hours Played normalizes XP across skills using Wise Old Man rates.</html>";
 	private static final String EHB_TOOLTIP = "<html><b>EHB gained</b><br>Efficient Hours Bossed normalizes boss KC using boss-specific kill rates.</html>";
 	private static final String CLOG_TOOLTIP = "<html><b>Collection podium</b><br>New Collection Log slots are ranked separately because early-account slots are easier.<br>They do not affect League score.</html>";
-	private static final String PROVISIONAL_TOOLTIP = "<html><b>Provisional</b><br>The first WOM snapshot is more than 72 hours after the season began.<br>The member remains visible but cannot enter a podium this month.</html>";
+	private static final String PROVISIONAL_TOOLTIP = "<html><b>Provisional</b><br>The member was not frozen into the opening roster, joined or started tracking late,<br>has missing dates, or lacks a fresh final snapshot. They remain visible but cannot enter the podium.</html>";
 
 	private final Runnable closeCallback;
 	private final Consumer<YearMonth> seasonCallback;
@@ -369,9 +369,14 @@ class MonthlyLeaguePanel extends JPanel
 		stateBadge.setText(season.isLive() ? "LIVE" : "FINAL");
 		stateBadge.setForeground(season.isLive() ? GREEN : GOLD);
 		countdownLabel.setText(season.isLive() ? countdown(season.getTimeRemaining()) : "Season completed");
-		sourceStatus.setText(season.getLabel() + "  ·  WOM group #" + season.getGroupId()
-			+ "  ·  Updated " + DateTimeFormatter.ofPattern("dd MMM, HH:mm")
+		sourceStatus.setText(season.getLabel() + "  |  WOM group #" + season.getGroupId()
+			+ (season.isFinalized() ? "  |  Sealed " : "  |  Updated ")
+			+ DateTimeFormatter.ofPattern("dd MMM, HH:mm")
 			.withZone(ZoneOffset.UTC).format(season.getGeneratedAt()) + " UTC");
+		refreshButton.setEnabled(season.isLive());
+		refreshButton.setToolTipText(season.isLive()
+			? "Refresh the current season within the WOM request limits"
+			: "Final standings are sealed locally and cannot be recalculated");
 		trackedValue.setText(String.valueOf(season.getStandings().size()));
 		eligibleValue.setText(String.valueOf(season.getEligibleCount()));
 		activeValue.setText(String.valueOf(season.getStandings().stream()

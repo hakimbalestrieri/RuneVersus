@@ -12,6 +12,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.swing.SwingUtilities;
@@ -57,6 +59,8 @@ public class RuneVersusPlugin extends Plugin
 	private static final String MENU_COMPARE = "VS Compare";
 	private static final String MENU_SET_A = "VS Set A";
 	private static final String MENU_SET_B = "VS Set B";
+	private static final long INCOMING_VS_GLOBAL_COOLDOWN_MILLIS = 8_000L;
+	private static final long INCOMING_VS_SENDER_COOLDOWN_MILLIS = 30_000L;
 
 	@Inject
 	private ClientThread clientThread;
@@ -101,11 +105,13 @@ public class RuneVersusPlugin extends Plugin
 	private SpriteManager spriteManager;
 
 	private final Map<Integer, String> playerIndexName = new HashMap<>();
+	private final ConcurrentMap<String, Long> incomingVsBySender = new ConcurrentHashMap<>();
 	private RuneVersusPanel panel;
 	private NavigationButton navButton;
 	private volatile String localPlayerName = "";
 	private volatile DuelResult lastResult;
 	private volatile YearMonth selectedLeagueMonth = YearMonth.now(ZoneOffset.UTC);
+	private long nextIncomingVsAt;
 
 	@Provides
 	RuneVersusConfig provideConfig(ConfigManager configManager)
@@ -122,7 +128,7 @@ public class RuneVersusPlugin extends Plugin
 		panel.setSocialActionCallback(this::handleSocialAction);
 		panel.setLocalPlayerSupplier(() -> localPlayerName);
 		panel.setExportAgainCallback(this::exportLastCard);
-		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false));
+		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false, true));
 		panel.setClanProgressExportCallback(this::exportClanProgress);
 		panel.setMonthlyLeagueLoadCallback(month -> analyzeMonthlyLeague(month, false));
 		panel.setMonthlyLeagueRefreshCallback(() -> analyzeMonthlyLeague(selectedLeagueMonth, true));
@@ -156,6 +162,8 @@ public class RuneVersusPlugin extends Plugin
 			panel.disposeWindows();
 		}
 		playerIndexName.clear();
+		incomingVsBySender.clear();
+		nextIncomingVsAt = 0L;
 		lastResult = null;
 		localPlayerName = "";
 	}
@@ -318,9 +326,42 @@ public class RuneVersusPlugin extends Plugin
 		}
 		else
 		{
+			long retryAfter = reserveIncomingVs(clean(chatMessage.getName()));
+			if (retryAfter > 0L)
+			{
+				setChatCommandResponse(chatMessage,
+					"[RuneVersus] !vs cooling down. Retry in " + retryAfter + "s.");
+				return;
+			}
 			setChatCommandResponse(chatMessage, "[RuneVersus] Fetching " + arguments.left + " vs " + arguments.right + "...");
 			compareForIncomingChat(chatMessage, arguments.left, arguments.right);
 		}
+	}
+
+	private synchronized long reserveIncomingVs(String sender)
+	{
+		long now = System.currentTimeMillis();
+		String key = normalizedChatName(sender);
+		long senderAllowedAt = incomingVsBySender.getOrDefault(key, 0L);
+		long allowedAt = Math.max(nextIncomingVsAt, senderAllowedAt);
+		if (now < allowedAt)
+		{
+			return Math.max(1L, (allowedAt - now + 999L) / 1_000L);
+		}
+
+		nextIncomingVsAt = now + INCOMING_VS_GLOBAL_COOLDOWN_MILLIS;
+		incomingVsBySender.put(key, now + INCOMING_VS_SENDER_COOLDOWN_MILLIS);
+		if (incomingVsBySender.size() > 256)
+		{
+			incomingVsBySender.entrySet().removeIf(entry -> entry.getValue() <= now);
+		}
+		return 0L;
+	}
+
+	private static String normalizedChatName(String name)
+	{
+		String cleaned = clean(name).toLowerCase(java.util.Locale.ROOT);
+		return cleaned.isEmpty() ? "unknown" : cleaned;
 	}
 
 	private void compare(String left, String right)
@@ -457,10 +498,10 @@ public class RuneVersusPlugin extends Plugin
 					analyzeMonthlyLeague(YearMonth.now(ZoneOffset.UTC), false);
 					break;
 				case CLAN_PROGRESS:
-					analyzeClanProgress(false);
+					analyzeClanProgress(false, false);
 					break;
 				case CLAN_PROGRESS_CARD:
-					analyzeClanProgress(true);
+					analyzeClanProgress(true, false);
 					break;
 				default:
 					panel.setStatus("Unknown social action.");
@@ -473,7 +514,7 @@ public class RuneVersusPlugin extends Plugin
 		sendChatMessage(RuneVersusChatFormatter.format(result));
 	}
 
-	private void analyzeClanProgress(boolean exportCard)
+	private void analyzeClanProgress(boolean exportCard, boolean forceRefresh)
 	{
 		int groupId = wiseOldManGroupId();
 		if (groupId <= 0)
@@ -493,7 +534,7 @@ public class RuneVersusPlugin extends Plugin
 		{
 			panel.showClanProgressLoading("Loading five periods for every WOM clan member...");
 		}
-		versusService.analyzeClanProgress("Clan progress", groupId)
+		versusService.analyzeClanProgress("Clan progress", groupId, forceRefresh)
 			.thenAccept(leaderboard ->
 			{
 				if (leaderboard.getPlayers().isEmpty())

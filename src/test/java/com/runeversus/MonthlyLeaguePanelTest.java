@@ -52,6 +52,16 @@ public class MonthlyLeaguePanelTest
 		Instant start,
 		Instant end)
 	{
-		return new MonthlyLeagueParticipant(name, "regular", ehp, ehb, clogs, start, end);
+		return new MonthlyLeagueParticipant(
+			Math.abs(name.hashCode()),
+			name,
+			"regular",
+			ehp,
+			ehb,
+			clogs,
+			start,
+			end,
+			start,
+			true);
 	}
 }

@@ -25,6 +25,7 @@ public class MonthlyLeagueSeason
 	private final Instant startsAt;
 	private final Instant endsAt;
 	private final Instant generatedAt;
+	private final boolean finalized;
 	private final List<MonthlyLeagueStanding> standings;
 
 	public MonthlyLeagueSeason(
@@ -33,11 +34,22 @@ public class MonthlyLeagueSeason
 		Instant generatedAt,
 		List<MonthlyLeagueParticipant> participants)
 	{
+		this(groupId, month, generatedAt, participants, false);
+	}
+
+	public MonthlyLeagueSeason(
+		int groupId,
+		YearMonth month,
+		Instant generatedAt,
+		List<MonthlyLeagueParticipant> participants,
+		boolean finalized)
+	{
 		this.groupId = groupId;
 		this.month = month;
 		this.startsAt = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 		this.endsAt = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 		this.generatedAt = generatedAt;
+		this.finalized = finalized;
 		this.standings = Collections.unmodifiableList(score(
 			participants == null ? Collections.emptyList() : participants));
 	}
@@ -75,7 +87,13 @@ public class MonthlyLeagueSeason
 
 	public boolean isLive()
 	{
-		return generatedAt != null && !generatedAt.isBefore(startsAt) && generatedAt.isBefore(endsAt);
+		return !finalized && generatedAt != null
+			&& !generatedAt.isBefore(startsAt) && generatedAt.isBefore(endsAt);
+	}
+
+	public boolean isFinalized()
+	{
+		return finalized;
 	}
 
 	public Duration getTimeRemaining()
@@ -143,11 +161,18 @@ public class MonthlyLeagueSeason
 		{
 			String key = key(participant);
 			Instant trackedFrom = participant.getTrackedFrom();
-			eligibility.put(key, trackedFrom == null || !trackedFrom.isAfter(startsAt.plus(ENTRY_GRACE)));
+			Instant joinedAt = participant.getJoinedAt();
 			Instant target = isLive() ? generatedAt : endsAt;
 			Instant trackedUntil = participant.getTrackedUntil();
-			freshness.put(key, trackedUntil != null && target != null
-				&& !trackedUntil.isBefore(target.minus(FRESHNESS_WINDOW)));
+			boolean isFresh = trackedUntil != null && target != null
+				&& !trackedUntil.isBefore(target.minus(FRESHNESS_WINDOW));
+			freshness.put(key, isFresh);
+			boolean wasReadyAtStart = participant.isRosterEligible()
+				&& joinedAt != null
+				&& trackedFrom != null
+				&& !joinedAt.isAfter(startsAt.plus(ENTRY_GRACE))
+				&& !trackedFrom.isAfter(startsAt.plus(ENTRY_GRACE));
+			eligibility.put(key, wasReadyAtStart && (!finalized || isFresh));
 		}
 
 		int eligibleCount = (int) eligibility.values().stream().filter(Boolean::booleanValue).count();
