@@ -18,6 +18,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import javax.inject.Singleton;
+import net.runelite.client.ui.FontManager;
 
 @Singleton
 public class RuneVersusCardRenderer
@@ -27,16 +28,19 @@ public class RuneVersusCardRenderer
 	private static final DateTimeFormatter DATE_FORMAT =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
-	private static final Color BACKGROUND_TOP = new Color(20, 22, 28);
-	private static final Color BACKGROUND_BOTTOM = new Color(8, 10, 15);
-	private static final Color PANEL = new Color(27, 30, 38, 232);
-	private static final Color PANEL_BORDER = new Color(230, 184, 92);
-	private static final Color GOLD = new Color(246, 197, 92);
+	private static final Color BACKGROUND_TOP = new Color(55, 45, 31);
+	private static final Color BACKGROUND_BOTTOM = new Color(18, 14, 10);
+	private static final Color PANEL = new Color(25, 22, 17, 246);
+	private static final Color PANEL_INNER = new Color(12, 11, 9, 238);
+	private static final Color STONE_LIGHT = new Color(126, 105, 72);
+	private static final Color STONE_MID = new Color(75, 60, 42);
+	private static final Color STONE_DARK = new Color(31, 24, 17);
+	private static final Color GOLD = new Color(255, 152, 31);
 	private static final Color RED = new Color(194, 67, 76);
 	private static final Color TEAL = new Color(73, 190, 176);
 	private static final Color BLUE = new Color(80, 132, 213);
-	private static final Color TEXT = new Color(244, 239, 225);
-	private static final Color MUTED = new Color(169, 160, 145);
+	private static final Color TEXT = new Color(255, 255, 255);
+	private static final Color MUTED = new Color(196, 180, 151);
 
 	public BufferedImage render(DuelResult duel)
 	{
@@ -76,12 +80,10 @@ public class RuneVersusCardRenderer
 		try
 		{
 			setup(g);
-			g.setPaint(new GradientPaint(0, 0, new Color(39, 44, 56), 48, 48, new Color(12, 15, 23)));
-			g.fillRoundRect(2, 2, 44, 44, 10, 10);
-			g.setColor(GOLD);
-			g.setStroke(new BasicStroke(3f));
-			g.drawRoundRect(3, 3, 42, 42, 10, 10);
-			g.setFont(new Font("SansSerif", Font.BOLD, 18));
+			g.setPaint(new GradientPaint(0, 0, BACKGROUND_TOP, 48, 48, BACKGROUND_BOTTOM));
+			g.fillRect(1, 1, 46, 46);
+			drawBevelFrame(g, 2, 2, 43, 43, GOLD, false);
+			g.setFont(osrsBold(20));
 			centerText(g, "VS", 24, 30, GOLD);
 		}
 		finally
@@ -94,11 +96,11 @@ public class RuneVersusCardRenderer
 	private static void setup(Graphics2D g)
 	{
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
 		g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 	}
 
-	public BufferedImage renderRosterRecap(RosterLeaderboard leaderboard, RuneVersusCardTheme theme)
+	public BufferedImage renderClanProgress(ClanProgressLeaderboard leaderboard, RuneVersusCardTheme theme)
 	{
 		BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = image.createGraphics();
@@ -107,21 +109,38 @@ public class RuneVersusCardRenderer
 			setup(g);
 			RuneVersusCardTheme resolvedTheme = theme == RuneVersusCardTheme.AUTO ? RuneVersusCardTheme.CLAN_WAR : theme;
 			drawBackground(g, resolvedTheme);
-			g.setFont(new Font("Serif", Font.BOLD, 44));
-			centerText(g, "RUNE VERSUS RECAP", WIDTH / 2, 64, resolvedTheme.getGold());
-			g.setFont(new Font("SansSerif", Font.BOLD, 15));
-			centerText(g, leaderboard.getLabel() + " | " + DATE_FORMAT.format(leaderboard.getCreatedAt()), WIDTH / 2, 92, MUTED);
 
-			drawRecapHero(g, 58, 130, "PvM King", leaderboard.getTopBossKc(), "Boss KC", resolvedTheme.getLeftAccent());
-			drawRecapHero(g, 430, 130, "Skilling King", leaderboard.getTopTotalXp(), "Total XP", resolvedTheme.getGold());
-			drawRecapHero(g, 802, 130, "Collection Lord", leaderboard.getTopCollections(), "Collections", resolvedTheme.getRightAccent());
+			drawTitlePlaque(g, 355, 20, 490, 82, resolvedTheme.getGold());
+			g.setFont(osrsBold(31));
+			centerText(g, "RuneVersus", WIDTH / 2, 49, resolvedTheme.getGold());
+			g.setFont(osrsBold(22));
+			centerText(g, "CLAN PROGRESS", WIDTH / 2, 73, TEXT);
+			g.setFont(osrsRegular(14));
+			centerText(g, leaderboard.getLabel() + " • " + leaderboard.getPlayers().size() + " tracked players • "
+				+ DATE_FORMAT.format(leaderboard.getCreatedAt()), WIDTH / 2, 94, MUTED);
 
-			drawRecapTable(g, 74, 338, "Top Boss KC", leaderboard.topByBossKc(6));
-			drawRecapTable(g, 430, 338, "Top XP", leaderboard.topByTotalXp(6));
-			drawRecapTable(g, 786, 338, "Current Form", leaderboard.topByWeekXp(6));
+			drawProgressHeader(g, 346, "XP / XP GAIN", resolvedTheme.getGold());
+			drawProgressHeader(g, 661, "CLOGS / GAIN", TEAL);
+			drawProgressHeader(g, 976, "BOSS KC / GAIN", RED);
 
-			g.setFont(new Font("SansSerif", Font.BOLD, 23));
-			centerText(g, leaderboard.getHeadline(), WIDTH / 2, 642, TEXT);
+			int rowY = 145;
+			for (GainPeriod period : GainPeriod.values())
+			{
+				drawPeriodBadge(g, 58, rowY, period, resolvedTheme.getGold());
+				drawProgressCell(g, 200, rowY, 292, 74, leaderboard, period,
+					ClanProgressMetric.XP, resolvedTheme.getGold());
+				drawProgressCell(g, 515, rowY, 292, 74, leaderboard, period,
+					ClanProgressMetric.COLLECTIONS, TEAL);
+				drawProgressCell(g, 830, rowY, 312, 74, leaderboard, period,
+					ClanProgressMetric.BOSS_KC, RED);
+				rowY += 86;
+			}
+
+			g.setFont(osrsRegular(15));
+			centerText(g, "Wise Old Man snapshots • Boss KC is summed across every boss • Group #"
+				+ leaderboard.getGroupId(), WIDTH / 2, 604, MUTED);
+			g.setFont(osrsBold(19));
+			centerText(g, "Five periods. Three crowns. One clan.", WIDTH / 2, 641, TEXT);
 		}
 		finally
 		{
@@ -132,34 +151,32 @@ public class RuneVersusCardRenderer
 
 	private static void drawBackground(Graphics2D g, RuneVersusCardTheme theme)
 	{
-		g.setPaint(new GradientPaint(0, 0, theme.getBackgroundTop(), 0, HEIGHT, theme.getBackgroundBottom()));
+		g.setPaint(new GradientPaint(0, 0, BACKGROUND_TOP, 0, HEIGHT, BACKGROUND_BOTTOM));
 		g.fillRect(0, 0, WIDTH, HEIGHT);
 
-		g.setComposite(AlphaComposite.SrcOver.derive(0.14f));
-		g.setColor(theme.getGold());
-		for (int x = -WIDTH; x < WIDTH * 2; x += 58)
+		// A deterministic, low-contrast stone texture keeps the image OSRS-like without external assets.
+		g.setComposite(AlphaComposite.SrcOver.derive(0.13f));
+		for (int y = 18; y < HEIGHT - 18; y += 9)
 		{
-			g.drawLine(x, 0, x + 420, HEIGHT);
+			for (int x = 18 + (y % 17); x < WIDTH - 18; x += 19)
+			{
+				int shade = 70 + Math.abs((x * 17 + y * 31) % 45);
+				g.setColor(new Color(shade, shade - 12, shade - 28));
+				g.fillRect(x, y, 2, 1);
+			}
 		}
 
-		g.setComposite(AlphaComposite.SrcOver.derive(0.20f));
-		g.setColor(theme.getLeftAccent());
-		g.fillOval(70, 58, 210, 210);
-		g.setColor(theme.getRightAccent());
-		g.fillOval(930, 424, 220, 220);
 		g.setComposite(AlphaComposite.SrcOver);
+		drawBevelFrame(g, 10, 10, WIDTH - 21, HEIGHT - 21, theme.getGold(), true);
 	}
 
 	private static void drawHeader(Graphics2D g, DuelResult duel, RuneVersusCardTheme theme)
 	{
-		g.setFont(new Font("Serif", Font.BOLD, 46));
-		centerText(g, "RUNE VERSUS", WIDTH / 2, 62, theme.getGold());
-		g.setFont(new Font("SansSerif", Font.BOLD, 15));
+		drawTitlePlaque(g, 370, 22, 460, 78, theme.getGold());
+		g.setFont(osrsBold(43));
+		centerText(g, "RuneVersus", WIDTH / 2, 65, theme.getGold());
+		g.setFont(osrsRegular(15));
 		centerText(g, DATE_FORMAT.format(duel.getCreatedAt()), WIDTH / 2, 91, MUTED);
-
-		g.setColor(new Color(255, 255, 255, 32));
-		g.setStroke(new BasicStroke(1.4f));
-		g.drawLine(325, 99, 875, 99);
 	}
 
 	private static void drawPlayerPanel(
@@ -184,13 +201,13 @@ public class RuneVersusCardRenderer
 		g.setColor(TEXT);
 		g.drawString(name.toUpperCase(), x + 24, y + 50);
 
-		g.setFont(new Font("SansSerif", Font.BOLD, 12));
+		g.setFont(osrsRegular(13));
 		g.setColor(MUTED);
 		g.drawString(left ? "LEFT CONTENDER" : "RIGHT CONTENDER", x + 26, y + 74);
 
-		g.setFont(new Font("Serif", Font.BOLD, 78));
+		g.setFont(osrsBold(76));
 		centerText(g, String.valueOf(score), x + w - 74, y + 92, accent);
-		g.setFont(new Font("SansSerif", Font.BOLD, 12));
+		g.setFont(osrsRegular(13));
 		centerText(g, "CROWNS", x + w - 74, y + 114, MUTED);
 
 		drawTinyStat(g, x + 26, y + 122, "Boss KC", format(bossKc), accent);
@@ -204,15 +221,37 @@ public class RuneVersusCardRenderer
 		int leftScore = duel.getLeftTotalWins();
 		int rightScore = duel.getRightTotalWins();
 
-		g.setColor(new Color(0, 0, 0, 120));
-		g.fillOval(500, 150, 200, 200);
-		g.setStroke(new BasicStroke(5f));
-		g.setColor(theme.getGold());
-		g.drawOval(505, 155, 190, 190);
+		g.setStroke(new BasicStroke(8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(STONE_DARK);
+		g.drawLine(535, 169, 668, 326);
+		g.drawLine(665, 169, 532, 326);
+		g.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(STONE_LIGHT);
+		g.drawLine(535, 169, 668, 326);
+		g.drawLine(665, 169, 532, 326);
 
-		g.setFont(new Font("Serif", Font.BOLD, 42));
+		Path2D shield = new Path2D.Double();
+		shield.moveTo(600, 148);
+		shield.lineTo(676, 176);
+		shield.lineTo(685, 255);
+		shield.lineTo(650, 320);
+		shield.lineTo(600, 348);
+		shield.lineTo(550, 320);
+		shield.lineTo(515, 255);
+		shield.lineTo(524, 176);
+		shield.closePath();
+		g.setColor(new Color(0, 0, 0, 150));
+		g.fill(shield);
+		g.setStroke(new BasicStroke(7f));
+		g.setColor(STONE_DARK);
+		g.draw(shield);
+		g.setStroke(new BasicStroke(3f));
+		g.setColor(theme.getGold());
+		g.draw(shield);
+
+		g.setFont(osrsBold(43));
 		centerText(g, leftScore + " - " + rightScore, WIDTH / 2, 230, TEXT);
-		g.setFont(new Font("SansSerif", Font.BOLD, 18));
+		g.setFont(osrsRegular(19));
 		centerText(g, "CATEGORY SCORE", WIDTH / 2, 263, MUTED);
 
 		String winner = duel.getWinnerName();
@@ -246,7 +285,7 @@ public class RuneVersusCardRenderer
 		drawHighlight(g, 646, 478, "Biggest Flex", flex, duel);
 
 		List<MetricResult> topBosses = duel.getTopBosses(2);
-		g.setFont(new Font("SansSerif", Font.BOLD, 14));
+		g.setFont(osrsRegular(15));
 		g.setColor(MUTED);
 		g.drawString("Boss gaps", 82, 570);
 		drawCompactMetricList(g, topBosses, 164, 570);
@@ -259,13 +298,13 @@ public class RuneVersusCardRenderer
 
 	private static void drawHighlight(Graphics2D g, int x, int y, String title, MetricResult metric, DuelResult duel)
 	{
-		g.setFont(new Font("SansSerif", Font.BOLD, 15));
+		g.setFont(osrsBold(16));
 		g.setColor(GOLD);
 		g.drawString(title.toUpperCase(), x, y);
 
 		if (metric == null)
 		{
-			g.setFont(new Font("SansSerif", Font.PLAIN, 20));
+			g.setFont(osrsRegular(21));
 			g.setColor(TEXT);
 			g.drawString("No clear gap yet", x, y + 34);
 			return;
@@ -276,95 +315,157 @@ public class RuneVersusCardRenderer
 		g.setColor(TEXT);
 		g.drawString(metric.getName(), x, y + 36);
 
-		g.setFont(new Font("SansSerif", Font.BOLD, 16));
+		g.setFont(osrsRegular(17));
 		g.setColor(MUTED);
 		g.drawString(holder + " leads by " + format(metric.getGap()), x, y + 66);
 	}
 
 	private static void drawFooter(Graphics2D g, String verdict)
 	{
-		g.setFont(new Font("SansSerif", Font.BOLD, 22));
+		g.setFont(osrsBold(23));
 		centerText(g, verdict, WIDTH / 2, 648, TEXT);
 	}
 
 	private static void drawPanel(Graphics2D g, int x, int y, int w, int h, Color accent, Color border)
 	{
-		g.setColor(new Color(0, 0, 0, 90));
-		g.fillRoundRect(x + 7, y + 9, w, h, 22, 22);
+		g.setColor(new Color(0, 0, 0, 130));
+		g.fillRect(x + 7, y + 8, w, h);
 		g.setColor(PANEL);
-		g.fillRoundRect(x, y, w, h, 22, 22);
-		g.setStroke(new BasicStroke(2.2f));
-		g.setColor(new Color(border.getRed(), border.getGreen(), border.getBlue(), 145));
-		g.drawRoundRect(x, y, w, h, 22, 22);
+		g.fillRect(x, y, w, h);
+		drawBevelFrame(g, x, y, w, h, border, false);
 		g.setColor(accent);
-		g.fillRoundRect(x, y, 9, h, 10, 10);
+		g.fillRect(x + 7, y + 7, 6, h - 13);
+		g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 90));
+		g.drawLine(x + 15, y + 8, x + 15, y + h - 8);
 	}
 
-	private static void drawRecapHero(Graphics2D g, int x, int y, String title, RosterStanding standing, String metric, Color accent)
+	private static void drawTitlePlaque(Graphics2D g, int x, int y, int w, int h, Color accent)
 	{
-		drawPanel(g, x, y, 340, 160, accent, GOLD);
-		g.setFont(new Font("SansSerif", Font.BOLD, 15));
-		g.setColor(GOLD);
-		g.drawString(title.toUpperCase(), x + 24, y + 32);
-		g.setFont(fitFont(g, standing == null ? "No data" : standing.getName(), Font.BOLD, 34, 292));
-		g.setColor(TEXT);
-		g.drawString(standing == null ? "No data" : standing.getName(), x + 24, y + 78);
-		g.setFont(new Font("Serif", Font.BOLD, 42));
-		g.setColor(accent);
-		g.drawString(standing == null ? "-" : format(standing.valueFor(metric)), x + 24, y + 126);
-		g.setFont(new Font("SansSerif", Font.BOLD, 12));
-		g.setColor(MUTED);
-		g.drawString(metric.toUpperCase(), x + 26, y + 145);
+		g.setColor(new Color(0, 0, 0, 120));
+		g.fillRect(x + 6, y + 7, w, h);
+		g.setColor(PANEL);
+		g.fillRect(x, y, w, h);
+		drawBevelFrame(g, x, y, w, h, accent, false);
+		drawRivet(g, x + 13, y + 13);
+		drawRivet(g, x + w - 13, y + 13);
+		drawRivet(g, x + 13, y + h - 13);
+		drawRivet(g, x + w - 13, y + h - 13);
 	}
 
-	private static void drawRecapTable(Graphics2D g, int x, int y, String title, List<RosterStanding> standings)
+	private static void drawBevelFrame(Graphics2D g, int x, int y, int w, int h, Color accent, boolean rivets)
 	{
-		drawPanel(g, x - 16, y - 32, 320, 240, BLUE, GOLD);
-		g.setFont(new Font("SansSerif", Font.BOLD, 15));
-		g.setColor(GOLD);
-		g.drawString(title.toUpperCase(), x, y);
-		g.setFont(new Font("SansSerif", Font.PLAIN, 16));
-		int row = 30;
-		int rank = 1;
-		for (RosterStanding standing : standings)
+		g.setStroke(new BasicStroke(5f));
+		g.setColor(STONE_DARK);
+		g.drawRect(x, y, w, h);
+		g.setStroke(new BasicStroke(2f));
+		g.setColor(STONE_LIGHT);
+		g.drawLine(x + 3, y + 3, x + w - 3, y + 3);
+		g.drawLine(x + 3, y + 3, x + 3, y + h - 3);
+		g.setColor(STONE_DARK);
+		g.drawLine(x + 3, y + h - 3, x + w - 3, y + h - 3);
+		g.drawLine(x + w - 3, y + 3, x + w - 3, y + h - 3);
+		g.setStroke(new BasicStroke(1.3f));
+		g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 155));
+		g.drawRect(x + 6, y + 6, w - 12, h - 12);
+		if (rivets)
 		{
-			String line = rank + ". " + standing.getName() + "  " + standing.bestDisplayFor(title);
-			g.setColor(rank == 1 ? TEXT : MUTED);
-			g.drawString(truncate(g, line, 270), x, y + row);
-			row += 28;
-			rank++;
+			drawRivet(g, x + 12, y + 12);
+			drawRivet(g, x + w - 12, y + 12);
+			drawRivet(g, x + 12, y + h - 12);
+			drawRivet(g, x + w - 12, y + h - 12);
 		}
+	}
+
+	private static void drawRivet(Graphics2D g, int x, int y)
+	{
+		g.setColor(STONE_DARK);
+		g.fillOval(x - 5, y - 5, 10, 10);
+		g.setColor(STONE_LIGHT);
+		g.fillOval(x - 3, y - 3, 6, 6);
+		g.setColor(STONE_MID);
+		g.drawLine(x - 2, y, x + 2, y);
+	}
+
+	private static void drawInsetBox(Graphics2D g, int x, int y, int w, int h, Color accent)
+	{
+		g.setColor(PANEL_INNER);
+		g.fillRect(x, y, w, h);
+		g.setStroke(new BasicStroke(2f));
+		g.setColor(STONE_DARK);
+		g.drawLine(x, y, x + w, y);
+		g.drawLine(x, y, x, y + h);
+		g.setColor(STONE_MID);
+		g.drawLine(x, y + h, x + w, y + h);
+		g.drawLine(x + w, y, x + w, y + h);
+		g.setStroke(new BasicStroke(1f));
+		g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 115));
+		g.drawRect(x + 3, y + 3, w - 6, h - 6);
+	}
+
+	private static void drawProgressHeader(Graphics2D g, int centerX, String label, Color color)
+	{
+		g.setFont(osrsBold(16));
+		centerText(g, label, centerX, 127, color);
+	}
+
+	private static void drawPeriodBadge(Graphics2D g, int x, int y, GainPeriod period, Color accent)
+	{
+		drawInsetBox(g, x, y, 122, 74, accent);
+		g.setFont(osrsBold(period == GainPeriod.DAY ? 25 : 19));
+		centerText(g, period.getLabel().toUpperCase(), x + 61, y + 46, TEXT);
+	}
+
+	private static void drawProgressCell(
+		Graphics2D g,
+		int x,
+		int y,
+		int width,
+		int height,
+		ClanProgressLeaderboard leaderboard,
+		GainPeriod period,
+		ClanProgressMetric metric,
+		Color accent)
+	{
+		drawInsetBox(g, x, y, width, height, accent);
+		g.setColor(accent);
+		g.fillRect(x + 4, y + 4, 5, height - 7);
+
+		ClanProgressPlayer leader = leaderboard.getLeader(period, metric);
+		String name = leader == null ? "No gain" : leader.getName();
+		String value = leader == null ? "—" : ClanProgressLeaderboard.valueText(
+			period, leader.getGains(period).valueFor(metric));
+		g.setFont(fitFont(g, name, Font.BOLD, 25, width - 42));
+		g.setColor(TEXT);
+		g.drawString(name, x + 22, y + 31);
+		g.setFont(osrsBold(26));
+		g.setColor(accent);
+		g.drawString(value, x + 22, y + 61);
 	}
 
 	private static void drawTinyStat(Graphics2D g, int x, int y, String label, String value, Color accent)
 	{
-		g.setColor(new Color(255, 255, 255, 18));
-		g.fillRoundRect(x, y, 158, 34, 12, 12);
-		g.setFont(new Font("SansSerif", Font.BOLD, 11));
+		drawInsetBox(g, x, y, 158, 34, accent);
+		g.setFont(osrsRegular(12));
 		g.setColor(MUTED);
 		g.drawString(label.toUpperCase(), x + 12, y + 13);
-		g.setFont(new Font("SansSerif", Font.BOLD, 17));
+		g.setFont(osrsBold(18));
 		g.setColor(accent);
 		g.drawString(value, x + 12, y + 29);
 	}
 
 	private static void drawScorePill(Graphics2D g, int x, int y, String label, long left, long right)
 	{
-		g.setColor(new Color(255, 255, 255, 20));
-		g.fillRoundRect(x, y, 202, 52, 18, 18);
-		g.setStroke(new BasicStroke(1.2f));
-		g.setColor(new Color(255, 255, 255, 38));
-		g.drawRoundRect(x, y, 202, 52, 18, 18);
+		drawInsetBox(g, x, y, 202, 52, GOLD);
 
-		g.setFont(new Font("SansSerif", Font.BOLD, 13));
+		g.setFont(osrsRegular(14));
 		centerText(g, label.toUpperCase(), x + 101, y + 18, MUTED);
-		g.setFont(new Font("Serif", Font.BOLD, 25));
+		g.setFont(osrsBold(26));
 		centerText(g, format(left) + " - " + format(right), x + 101, y + 43, TEXT);
 	}
 
 	private static void drawCompactMetricList(Graphics2D g, List<MetricResult> metrics, int x, int y)
 	{
-		g.setFont(new Font("SansSerif", Font.PLAIN, 13));
+		g.setFont(osrsRegular(14));
 		g.setColor(TEXT);
 		int offset = 0;
 		for (MetricResult metric : metrics)
@@ -380,14 +481,24 @@ public class RuneVersusCardRenderer
 		int size = startSize;
 		while (size > 12)
 		{
-			Font font = new Font("SansSerif", style, size);
+			Font font = style == Font.BOLD ? osrsBold(size) : osrsRegular(size);
 			if (g.getFontMetrics(font).stringWidth(text) <= maxWidth)
 			{
 				return font;
 			}
 			size--;
 		}
-		return new Font("SansSerif", style, 12);
+		return style == Font.BOLD ? osrsBold(12) : osrsRegular(12);
+	}
+
+	private static Font osrsBold(float size)
+	{
+		return FontManager.getRunescapeBoldFont().deriveFont(size);
+	}
+
+	private static Font osrsRegular(float size)
+	{
+		return FontManager.getRunescapeFont().deriveFont(size);
 	}
 
 	private static void centerText(Graphics2D g, String text, int centerX, int baselineY, Color color)

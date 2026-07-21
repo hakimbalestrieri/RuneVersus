@@ -1,9 +1,6 @@
 package com.runeversus;
 
 import com.runeversus.model.DuelResult;
-import com.runeversus.model.MetricResult;
-import com.runeversus.model.MetricType;
-import com.runeversus.model.PlayerSide;
 
 public final class RuneVersusFlavor
 {
@@ -75,30 +72,6 @@ public final class RuneVersusFlavor
 			return winner + " wins with skilling depth.";
 		}
 		return winner + " edges it. Certified rivalry fuel.";
-	}
-
-	public static String snipeCallout(DuelResult duel)
-	{
-		MetricResult closest = duel.getClosestSteal();
-		if (closest == null)
-		{
-			return "No obvious snipe yet.";
-		}
-
-		PlayerSide winner = closest.getWinner();
-		String chaser = winner == PlayerSide.LEFT ? duel.getRight().getName() : duel.getLeft().getName();
-		if (closest.isLowerIsBetter())
-		{
-			String unit = closest.getType() == MetricType.PERSONAL_BEST ? "seconds faster" : "lower";
-			return chaser + " needs " + format(closest.getGap() + 1) + " " + unit + " to steal " + closest.getName() + ".";
-		}
-
-		String action = closest.getType().getLabel().equals("Skills") ? "XP" : "score";
-		if (closest.getType().getLabel().contains("Boss"))
-		{
-			action = "KC";
-		}
-		return chaser + " needs " + format(closest.getGap() + 1) + " " + action + " to steal " + closest.getName() + ".";
 	}
 
 	public static String format(long value)

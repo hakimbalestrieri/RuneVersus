@@ -65,7 +65,26 @@ public class OptInSyncService
 		{
 			collectionItems = longProperty(properties, "collectionLog.items");
 		}
-		return new SyncedPlayerData(personalBests, collectionItems);
+
+		CombatAchievementTier combatAchievementTier = CombatAchievementTier.parse(
+			firstProperty(properties,
+				"combatAchievements.tier",
+				"combatAchievement.tier",
+				"ca.tier"));
+		return new SyncedPlayerData(personalBests, collectionItems, combatAchievementTier);
+	}
+
+	private static String firstProperty(Properties properties, String... keys)
+	{
+		for (String key : keys)
+		{
+			String value = properties.getProperty(key);
+			if (value != null && !value.trim().isEmpty())
+			{
+				return value;
+			}
+		}
+		return null;
 	}
 
 	private static void addPersonalBest(Map<String, Long> personalBests, String bossName, String value)

@@ -54,7 +54,10 @@ public class CardExporter
 		return out;
 	}
 
-	public File exportRecap(RosterLeaderboard leaderboard, boolean copyPathToClipboard, RuneVersusCardTheme theme) throws IOException
+	public File exportClanProgress(
+		ClanProgressLeaderboard leaderboard,
+		boolean copyPathToClipboard,
+		RuneVersusCardTheme theme) throws IOException
 	{
 		File dir = new File(RuneLite.RUNELITE_DIR, "rune-versus/cards");
 		if (!dir.exists() && !dir.mkdirs())
@@ -62,9 +65,10 @@ public class CardExporter
 			throw new IOException("Unable to create export directory: " + dir);
 		}
 
-		String name = sanitize(leaderboard.getLabel()) + "-recap-" + FILE_TIME.format(leaderboard.getCreatedAt()) + ".png";
+		String name = sanitize(leaderboard.getLabel()) + "-progress-"
+			+ FILE_TIME.format(leaderboard.getCreatedAt()) + ".png";
 		File out = new File(dir, name);
-		BufferedImage image = renderer.renderRosterRecap(leaderboard, theme);
+		BufferedImage image = renderer.renderClanProgress(leaderboard, theme);
 		ImageIO.write(image, "png", out);
 
 		if (copyPathToClipboard)

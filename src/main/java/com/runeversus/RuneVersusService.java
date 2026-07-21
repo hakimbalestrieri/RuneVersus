@@ -8,8 +8,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -74,32 +75,38 @@ public class RuneVersusService
 		}, executor);
 	}
 
-	public CompletableFuture<RosterLeaderboard> analyzeRoster(String label, List<String> names)
+	public CompletableFuture<ClanProgressLeaderboard> analyzeClanProgress(String label, int groupId)
 	{
 		return CompletableFuture.supplyAsync(() ->
 		{
-			List<String> limited = limitNames(names);
-			List<RosterStanding> standings = new ArrayList<>();
-			for (String name : limited)
+			Map<String, String> displayNames = new LinkedHashMap<>();
+			Map<String, EnumMap<GainPeriod, ClanProgressGains>> gainsByPlayer = new LinkedHashMap<>();
+			try
 			{
-				try
+				for (GainPeriod period : GainPeriod.values())
 				{
-					PlayerProfile profile = loadProfile(name);
-					standings.add(new RosterStanding(
-						profile.getName(),
-						totalSkillXp(profile),
-						totalBossKc(profile),
-						score(profile.getHiscores(), HiscoreSkill.COLLECTIONS_LOGGED),
-						profile.getDayGains().getOrDefault(HiscoreSkill.OVERALL, 0L),
-						profile.getWeekGains().getOrDefault(HiscoreSkill.OVERALL, 0L),
-						profile.getMonthGains().getOrDefault(HiscoreSkill.OVERALL, 0L)));
-				}
-				catch (IOException ignored)
-				{
-					// Skip unranked or temporarily unavailable profiles for roster cards.
+					Map<String, ClanProgressGains> periodGains = wiseOldManGainsClient.getGroupGains(groupId, period);
+					for (Map.Entry<String, ClanProgressGains> entry : periodGains.entrySet())
+					{
+						String key = normalizedName(entry.getKey());
+						displayNames.putIfAbsent(key, entry.getKey());
+						gainsByPlayer.computeIfAbsent(key, ignored -> new EnumMap<>(GainPeriod.class))
+							.put(period, entry.getValue());
+					}
 				}
 			}
-			return new RosterLeaderboard(label, standings);
+			catch (IOException ex)
+			{
+				throw new IllegalStateException(ex);
+			}
+
+			List<ClanProgressPlayer> players = new ArrayList<>();
+			for (Map.Entry<String, EnumMap<GainPeriod, ClanProgressGains>> entry : gainsByPlayer.entrySet())
+			{
+				players.add(new ClanProgressPlayer(displayNames.get(entry.getKey()), entry.getValue()));
+			}
+			players.sort(java.util.Comparator.comparing(ClanProgressPlayer::getName, String.CASE_INSENSITIVE_ORDER));
+			return new ClanProgressLeaderboard(label, groupId, players);
 		}, executor);
 	}
 
@@ -120,30 +127,6 @@ public class RuneVersusService
 		Map<HiscoreSkill, Long> week = safeGains(name, "week");
 		Map<HiscoreSkill, Long> month = safeGains(name, "month");
 		return new PlayerProfile(name, result, day, week, month, !day.isEmpty() || !week.isEmpty() || !month.isEmpty());
-	}
-
-	private List<String> limitNames(List<String> names)
-	{
-		if (names == null || names.isEmpty())
-		{
-			return Collections.emptyList();
-		}
-
-		int max = Math.max(2, Math.min(50, config.maxRosterPlayers()));
-		Set<String> unique = new LinkedHashSet<>();
-		for (String name : names)
-		{
-			String cleaned = cleanName(name);
-			if (!cleaned.isEmpty())
-			{
-				unique.add(cleaned);
-			}
-			if (unique.size() >= max)
-			{
-				break;
-			}
-		}
-		return new ArrayList<>(unique);
 	}
 
 	private Map<HiscoreSkill, Long> safeGains(String name, String period)
@@ -232,6 +215,17 @@ public class RuneVersusService
 				right.getCollectionItems()));
 		}
 
+		CombatAchievementTier leftTier = left.getCombatAchievementTier();
+		CombatAchievementTier rightTier = right.getCombatAchievementTier();
+		if (leftTier.isKnown() && rightTier.isKnown())
+		{
+			activities.add(new MetricResult(
+				MetricType.COMBAT_ACHIEVEMENTS,
+				"Combat Achievements",
+				leftTier.getScore(),
+				rightTier.getScore()));
+		}
+
 		Set<String> bosses = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
 		bosses.addAll(left.getPersonalBests().keySet());
 		bosses.addAll(right.getPersonalBests().keySet());
@@ -300,34 +294,13 @@ public class RuneVersusService
 		return Math.max(0, s.getLevel());
 	}
 
-	private static long totalSkillXp(PlayerProfile profile)
-	{
-		long total = 0L;
-		for (HiscoreSkill skill : HiscoreSkill.values())
-		{
-			if (skill.getType() == HiscoreSkillType.SKILL)
-			{
-				total += skillExperience(profile.getHiscores(), skill);
-			}
-		}
-		return total;
-	}
-
-	private static long totalBossKc(PlayerProfile profile)
-	{
-		long total = 0L;
-		for (HiscoreSkill skill : HiscoreSkill.values())
-		{
-			if (skill.getType() == HiscoreSkillType.BOSS)
-			{
-				total += score(profile.getHiscores(), skill);
-			}
-		}
-		return total;
-	}
-
 	private static String cleanName(String name)
 	{
 		return name == null ? "" : name.trim();
+	}
+
+	private static String normalizedName(String name)
+	{
+		return cleanName(name).replace('\u00a0', ' ').toLowerCase(Locale.ROOT);
 	}
 }

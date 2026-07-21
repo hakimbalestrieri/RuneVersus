@@ -9,11 +9,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.swing.SwingUtilities;
@@ -24,10 +21,12 @@ import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Player;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatCommandManager;
 import net.runelite.client.chat.ChatMessageManager;
@@ -36,6 +35,8 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.PartyChanged;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SkillIconManager;
 import net.runelite.client.menus.MenuManager;
 import net.runelite.client.party.PartyMember;
 import net.runelite.client.party.PartyService;
@@ -98,6 +99,12 @@ public class RuneVersusPlugin extends Plugin
 	@Inject
 	private Provider<MenuManager> menuManager;
 
+	@Inject
+	private SkillIconManager skillIconManager;
+
+	@Inject
+	private ItemManager itemManager;
+
 	private final Map<Integer, String> playerIndexName = new HashMap<>();
 	private RuneVersusPanel panel;
 	private NavigationButton navButton;
@@ -113,12 +120,14 @@ public class RuneVersusPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new RuneVersusPanel();
+		panel = new RuneVersusPanel(new RuneVersusIcons(skillIconManager, itemManager));
 		panel.setCompareCallback(this::compare);
 		panel.setRosterCallback(this::loadRoster);
 		panel.setSocialActionCallback(this::handleSocialAction);
 		panel.setLocalPlayerSupplier(() -> localPlayerName);
 		panel.setExportAgainCallback(this::exportLastCard);
+		panel.setClanProgressRefreshCallback(() -> analyzeClanProgress(false));
+		panel.setClanProgressExportCallback(this::exportClanProgress);
 
 		BufferedImage icon = cardRenderer.renderIcon();
 		navButton = NavigationButton.builder()
@@ -145,6 +154,10 @@ public class RuneVersusPlugin extends Plugin
 		wsClient.unregisterMessage(RuneVersusDuelPartyMessage.class);
 		clientToolbar.removeNavigation(navButton);
 		removePlayerMenuItems();
+		if (panel != null)
+		{
+			panel.disposeWindows();
+		}
 		playerIndexName.clear();
 		lastResult = null;
 		localPlayerName = "";
@@ -156,6 +169,10 @@ public class RuneVersusPlugin extends Plugin
 		if (!"runeversus".equals(event.getGroup()))
 		{
 			return;
+		}
+		if ("openInterfaceOnComparison".equals(event.getKey()) && !config.openInterfaceOnComparison())
+		{
+			panel.hideVersusWindow();
 		}
 
 		removePlayerMenuItems();
@@ -169,18 +186,38 @@ public class RuneVersusPlugin extends Plugin
 	private void onMenuOpened(MenuOpened event)
 	{
 		playerIndexName.clear();
+		String clanMemberName = "";
+		String clanMemberTarget = "";
+		boolean hasClanCompare = false;
 		for (MenuEntry entry : event.getMenuEntries())
 		{
-			if (entry.getType() != MenuAction.RUNELITE_PLAYER || !isVersusPlayerMenu(entry.getOption()))
+			if (entry.getType() == MenuAction.RUNELITE_PLAYER && isVersusPlayerMenu(entry.getOption()))
 			{
-				continue;
+				Player player = entry.getPlayer();
+				if (player != null)
+				{
+					playerIndexName.put(entry.getIdentifier(), clean(player.getName()));
+				}
 			}
 
-			Player player = entry.getPlayer();
-			if (player != null)
+			if (MENU_COMPARE.equals(entry.getOption()) && entry.getType() == MenuAction.RUNELITE)
 			{
-				playerIndexName.put(entry.getIdentifier(), clean(player.getName()));
+				hasClanCompare = true;
 			}
+			if (clanMemberName.isEmpty() && isClanMemberMenuEntry(entry))
+			{
+				String name = clean(entry.getTarget());
+				if (!name.isEmpty())
+				{
+					clanMemberName = name;
+					clanMemberTarget = entry.getTarget();
+				}
+			}
+		}
+
+		if (config.playerMenuOptions() && !hasClanCompare && !clanMemberName.isEmpty())
+		{
+			addClanMemberMenuEntries(clanMemberName, clanMemberTarget);
 		}
 	}
 
@@ -201,7 +238,11 @@ public class RuneVersusPlugin extends Plugin
 			return;
 		}
 
-		String option = event.getMenuOption();
+		handleVersusMenuOption(event.getMenuOption(), target);
+	}
+
+	private void handleVersusMenuOption(String option, String target)
+	{
 		if (MENU_SET_A.equals(option))
 		{
 			openPanel();
@@ -220,12 +261,12 @@ public class RuneVersusPlugin extends Plugin
 		String local = getLocalPlayerName();
 		if (local.isEmpty())
 		{
-			openPanel();
-			panel.setStatus("Log in before comparing a player from the right-click menu.");
+			String message = "Log in before comparing a player from the right-click menu.";
+			panel.setStatus(message);
+			sendChatMessage("[RuneVersus] " + message);
 			return;
 		}
 
-		openPanel();
 		compare(local, target);
 	}
 
@@ -322,12 +363,20 @@ public class RuneVersusPlugin extends Plugin
 		}
 
 		panel.setStatus("Fetching " + leftName + " vs " + rightName + "...");
+		boolean separateWindow = config.openInterfaceOnComparison();
+		panel.showVersusLoading(leftName, rightName, separateWindow);
+		if (!separateWindow)
+		{
+			openPanel();
+		}
 		versusService.compare(leftName, rightName)
-			.thenAccept(this::handleDuelResult)
+			.thenAccept(result -> handleDuelResult(result, separateWindow))
 			.exceptionally(ex ->
 			{
-				panel.setStatus("Comparison failed: " + readableError(ex));
-				sendChatMessage("[RuneVersus] Comparison failed: " + readableError(ex));
+				String message = "Comparison failed: " + readableError(ex);
+				panel.setStatus(message);
+				panel.showVersusError(message, separateWindow);
+				sendChatMessage("[RuneVersus] " + message);
 				return null;
 			});
 	}
@@ -335,7 +384,7 @@ public class RuneVersusPlugin extends Plugin
 	private void compareForIncomingChat(ChatMessage chatMessage, String leftName, String rightName)
 	{
 		versusService.compare(leftName, rightName)
-			.thenAccept(result -> setChatCommandResponse(chatMessage, buildCompactResult(result, verdict(result))))
+			.thenAccept(result -> setChatCommandResponse(chatMessage, RuneVersusChatFormatter.format(result)))
 			.exceptionally(ex ->
 			{
 				setChatCommandResponse(chatMessage, "[RuneVersus] Comparison failed: " + readableError(ex));
@@ -343,7 +392,7 @@ public class RuneVersusPlugin extends Plugin
 			});
 	}
 
-	private void handleDuelResult(DuelResult result)
+	private void handleDuelResult(DuelResult result, boolean separateWindow)
 	{
 		lastResult = result;
 		String verdict = verdict(result);
@@ -361,7 +410,8 @@ public class RuneVersusPlugin extends Plugin
 		}
 
 		panel.showResult(result, exported, verdict);
-		sendResultMessage(result, exported, verdict);
+		panel.showVersusResult(result, exported, verdict, separateWindow);
+		sendResultMessage(result);
 		if (config.partyAnnounceCards() && partyService.isInParty())
 		{
 			announceToParty(result, verdict);
@@ -447,20 +497,11 @@ public class RuneVersusPlugin extends Plugin
 		{
 			switch (action)
 			{
-				case PARTY_BOARD:
-					analyzeRoster("Party", rosterService.getPartyMembers(), false);
+				case CLAN_PROGRESS:
+					analyzeClanProgress(false);
 					break;
-				case CLAN_BOARD:
-					analyzeRoster("Online clan", rosterService.getOnlineClanMembers(), false);
-					break;
-				case CLAN_RECAP:
-					analyzeRoster("Clan recap", rosterService.getOnlineClanMembers(), true);
-					break;
-				case FIGHT_NIGHT:
-					startFightNight();
-					break;
-				case WATCHLIST:
-					checkWatchlist();
+				case CLAN_PROGRESS_CARD:
+					analyzeClanProgress(true);
 					break;
 				default:
 					panel.setStatus("Unknown social action.");
@@ -468,168 +509,92 @@ public class RuneVersusPlugin extends Plugin
 		});
 	}
 
-	private void analyzeRoster(String label, List<String> names, boolean exportRecap)
+	private void sendResultMessage(DuelResult result)
 	{
-		List<String> roster = limitedNames(names);
-		if (roster.isEmpty())
+		sendChatMessage(RuneVersusChatFormatter.format(result));
+	}
+
+	private void analyzeClanProgress(boolean exportCard)
+	{
+		int groupId = wiseOldManGroupId();
+		if (groupId <= 0)
 		{
-			panel.setStatus("No players found for " + label + ".");
-			panel.showText("[RuneVersus] " + label + ": no players found.");
+			String message = "Set your WOM group ID in RuneVersus settings > Party & clan first.";
+			panel.setStatus(message);
+			if (!exportCard)
+			{
+				panel.showClanProgressLoading(message);
+				panel.showClanProgressError(message);
+			}
 			return;
 		}
 
-		panel.setStatus("Fetching " + roster.size() + " " + label + " player(s)...");
-		versusService.analyzeRoster(label, roster)
+		panel.setStatus("Fetching clan gains and all-time totals...");
+		if (!exportCard)
+		{
+			panel.showClanProgressLoading("Loading five periods for every WOM clan member...");
+		}
+		versusService.analyzeClanProgress("Clan progress", groupId)
 			.thenAccept(leaderboard ->
 			{
-				String text = leaderboard.toCompactText();
-				File exported = null;
-				if (exportRecap)
+				if (leaderboard.getPlayers().isEmpty())
 				{
-					try
+					String message = "No tracked players found in WOM group #" + groupId + ".";
+					if (!exportCard)
 					{
-						exported = cardExporter.exportRecap(leaderboard, config.copyPathToClipboard(), config.cardTheme());
+						panel.showClanProgressError(message);
 					}
-					catch (IOException ex)
-					{
-						panel.setStatus("Recap built, but PNG export failed: " + ex.getMessage());
-					}
+					panel.setStatus(message);
+					sendChatMessage("[RuneVersus] " + message);
+					return;
 				}
 
-				StringBuilder output = new StringBuilder(text);
-				if (exported != null)
+				if (exportCard)
 				{
-					output.append("\nPNG: ").append(exported.getAbsolutePath());
+					exportClanProgress(leaderboard, false);
 				}
-				panel.showText(output.toString());
-				panel.setStatus(exported == null ? "Leaderboard ready." : "Recap exported: " + exported.getName());
-				sendChatMessage(exported == null ? text : text + " PNG: " + exported.getAbsolutePath());
+				else
+				{
+					panel.showClanProgress(leaderboard);
+					panel.setStatus("Clan comparison ready.");
+				}
 			})
 			.exceptionally(ex ->
 			{
-				panel.setStatus("Leaderboard failed: " + readableError(ex));
-				sendChatMessage("[RuneVersus] Leaderboard failed: " + readableError(ex));
+				String message = "Clan progress failed: " + readableError(ex);
+				panel.setStatus(message);
+				if (!exportCard)
+				{
+					panel.showClanProgressError(message);
+				}
+				sendChatMessage("[RuneVersus] " + message);
 				return null;
 			});
 	}
 
-	private void startFightNight()
+	private void exportClanProgress(ClanProgressLeaderboard leaderboard)
 	{
-		List<String> names = limitedNames(rosterService.getOnlineClanMembers());
-		if (names.size() < 2)
-		{
-			names = limitedNames(rosterService.getPartyMembers());
-		}
-		if (names.size() < 2)
-		{
-			panel.setStatus("Fight Night needs at least two online clan or party players.");
-			panel.showText("[RuneVersus] Fight Night needs at least two online clan or party players.");
-			return;
-		}
-
-		Collections.shuffle(names);
-		String left = names.get(0);
-		String right = names.get(1);
-		panel.setStatus("Fight Night matchup: " + left + " vs " + right + "...");
-		versusService.compare(left, right)
-			.thenAccept(result ->
-			{
-				lastResult = result;
-				String verdict = "Fight Night: " + verdict(result);
-				File exported = null;
-				try
-				{
-					exported = cardExporter.export(result, config.copyPathToClipboard(), RuneVersusCardTheme.CLAN_WAR, verdict);
-				}
-				catch (IOException ex)
-				{
-					panel.setStatus("Fight Night compared, but PNG export failed: " + ex.getMessage());
-				}
-
-				panel.showResult(result, exported, verdict);
-				sendChatMessage(buildCompactResult(result, verdict)
-					+ (exported == null ? "" : " PNG: " + exported.getAbsolutePath()));
-			})
-			.exceptionally(ex ->
-			{
-				panel.setStatus("Fight Night failed: " + readableError(ex));
-				sendChatMessage("[RuneVersus] Fight Night failed: " + readableError(ex));
-				return null;
-			});
+		exportClanProgress(leaderboard, true);
 	}
 
-	private void checkWatchlist()
+	private void exportClanProgress(ClanProgressLeaderboard leaderboard, boolean showWindowOnError)
 	{
-		String local = getLocalPlayerName();
-		if (local.isEmpty())
+		try
 		{
-			panel.setStatus("Log in before checking watchlist rivals.");
-			return;
+			File exported = cardExporter.exportClanProgress(
+				leaderboard, config.copyPathToClipboard(), config.cardTheme());
+			panel.showSavedCard(exported);
+			panel.setStatus("Progress card saved: " + exported.getName());
 		}
-
-		List<String> rivals = limitedNames(parseNameList(config.watchlistRivals()));
-		if (rivals.isEmpty())
+		catch (IOException ex)
 		{
-			panel.setStatus("Add comma-separated rivals in RuneVersus config first.");
-			panel.showText("[RuneVersus] Watchlist is empty. Add comma-separated RSNs in config.");
-			return;
-		}
-
-		panel.setStatus("Checking " + rivals.size() + " watchlist rival(s)...");
-		List<CompletableFuture<String>> futures = new ArrayList<>();
-		for (String rival : rivals)
-		{
-			if (rival.equalsIgnoreCase(local))
+			String message = "PNG export failed: " + ex.getMessage();
+			panel.setStatus(message);
+			if (showWindowOnError)
 			{
-				continue;
+				panel.showClanProgressError(message);
 			}
-			futures.add(versusService.compare(local, rival)
-				.thenApply(result -> buildWatchlistLine(result, verdict(result)))
-				.exceptionally(ex -> "[RuneVersus] " + local + " vs " + rival + " failed: " + readableError(ex)));
 		}
-
-		if (futures.isEmpty())
-		{
-			panel.setStatus("Watchlist only contains your current player.");
-			return;
-		}
-
-		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-			.thenRun(() ->
-			{
-				StringBuilder text = new StringBuilder();
-				for (CompletableFuture<String> future : futures)
-				{
-					String line = future.join();
-					text.append(line).append('\n');
-					sendChatMessage(line);
-				}
-				panel.showText(text.toString().trim());
-				panel.setStatus("Watchlist checked.");
-			});
-	}
-
-	private void sendResultMessage(DuelResult result, File exported, String verdict)
-	{
-		StringBuilder message = new StringBuilder()
-			.append("[RuneVersus] ")
-			.append(result.getLeft().getName())
-			.append(" vs ")
-			.append(result.getRight().getName())
-			.append(": ")
-			.append(result.getLeftTotalWins())
-			.append("-")
-			.append(result.getRightTotalWins())
-			.append(". ")
-			.append(verdict)
-			.append(" ")
-			.append(RuneVersusFlavor.snipeCallout(result));
-
-		if (exported != null)
-		{
-			message.append(" PNG: ").append(exported.getAbsolutePath());
-		}
-		sendChatMessage(message.toString());
 	}
 
 	private String verdict(DuelResult result)
@@ -637,119 +602,84 @@ public class RuneVersusPlugin extends Plugin
 		return RuneVersusFlavor.verdict(result, config.verdictStyle());
 	}
 
-	private static String buildCompactResult(DuelResult result, String verdict)
-	{
-		StringBuilder message = new StringBuilder()
-			.append("[RuneVersus] ")
-			.append(result.getLeft().getName())
-			.append(" vs ")
-			.append(result.getRight().getName())
-			.append(" | Score ")
-			.append(result.getLeftTotalWins())
-			.append("-")
-			.append(result.getRightTotalWins())
-			.append(" | PvM ")
-			.append(result.getLeftBossWins())
-			.append("-")
-			.append(result.getRightBossWins())
-			.append(" | Skills ")
-			.append(result.getLeftSkillWins())
-			.append("-")
-			.append(result.getRightSkillWins());
-
-		if (!result.getDayForm().isEmpty())
-		{
-			message.append(" | 24h XP ")
-				.append(formatShort(result.getLeftDayXp()))
-				.append("-")
-				.append(formatShort(result.getRightDayXp()));
-		}
-
-		message.append(" | ").append(verdict)
-			.append(" | ")
-			.append(RuneVersusFlavor.snipeCallout(result));
-		return message.toString();
-	}
-
-	private static String buildWatchlistLine(DuelResult result, String verdict)
-	{
-		return buildCompactResult(result, verdict);
-	}
-
-	private List<String> limitedNames(List<String> names)
-	{
-		if (names == null || names.isEmpty())
-		{
-			return Collections.emptyList();
-		}
-
-		int max = Math.max(2, Math.min(50, config.maxRosterPlayers()));
-		Set<String> unique = new LinkedHashSet<>();
-		for (String name : names)
-		{
-			String cleaned = clean(name);
-			if (!cleaned.isEmpty())
-			{
-				unique.add(cleaned);
-			}
-			if (unique.size() >= max)
-			{
-				break;
-			}
-		}
-		return new ArrayList<>(unique);
-	}
-
-	private static List<String> parseNameList(String names)
-	{
-		if (names == null || names.trim().isEmpty())
-		{
-			return Collections.emptyList();
-		}
-
-		List<String> out = new ArrayList<>();
-		for (String token : names.split(","))
-		{
-			String cleaned = clean(token);
-			if (!cleaned.isEmpty())
-			{
-				out.add(cleaned);
-			}
-		}
-		return out;
-	}
-
 	private static String socialActionLabel(RuneVersusPanel.SocialAction action)
 	{
 		switch (action)
 		{
-			case PARTY_BOARD:
-				return "Party leaderboard";
-			case CLAN_BOARD:
-				return "Clan leaderboard";
-			case CLAN_RECAP:
-				return "Clan recap";
-			case FIGHT_NIGHT:
-				return "Fight Night";
-			case WATCHLIST:
-				return "Watchlist";
+			case CLAN_PROGRESS:
+				return "Clan member comparison";
+			case CLAN_PROGRESS_CARD:
+				return "progress card";
 			default:
 				return "social action";
+		}
+	}
+
+	private int wiseOldManGroupId()
+	{
+		String configured = config.wiseOldManGroupId();
+		if (configured == null)
+		{
+			return 0;
+		}
+		try
+		{
+			int groupId = Integer.parseInt(configured.trim());
+			return Math.max(0, groupId);
+		}
+		catch (NumberFormatException ex)
+		{
+			return 0;
 		}
 	}
 
 	private void addPlayerMenuItems()
 	{
 		menuManager.get().addPlayerMenuItem(MENU_COMPARE);
-		menuManager.get().addPlayerMenuItem(MENU_SET_A);
-		menuManager.get().addPlayerMenuItem(MENU_SET_B);
 	}
 
 	private void removePlayerMenuItems()
 	{
 		menuManager.get().removePlayerMenuItem(MENU_COMPARE);
+		// Remove legacy world-player entries too, in case this version replaces an older build at runtime.
 		menuManager.get().removePlayerMenuItem(MENU_SET_A);
 		menuManager.get().removePlayerMenuItem(MENU_SET_B);
+	}
+
+	private void addClanMemberMenuEntries(String playerName, String displayTarget)
+	{
+		addClanMemberMenuEntry(MENU_COMPARE, playerName, displayTarget);
+		if (config.clanSetMenuOptions())
+		{
+			// RuneLite inserts index -1 entries at the top, so create B first to display A above it.
+			addClanMemberMenuEntry(MENU_SET_B, playerName, displayTarget);
+			addClanMemberMenuEntry(MENU_SET_A, playerName, displayTarget);
+		}
+	}
+
+	private void addClanMemberMenuEntry(String option, String playerName, String displayTarget)
+	{
+		client.createMenuEntry(-1)
+			.setOption(option)
+			.setTarget(displayTarget == null || displayTarget.isEmpty() ? playerName : displayTarget)
+			.setType(MenuAction.RUNELITE)
+			.onClick(entry -> handleVersusMenuOption(option, playerName));
+	}
+
+	private static boolean isClanMemberMenuEntry(MenuEntry entry)
+	{
+		return isClanMemberComponent(entry.getParam1(), entry.getType());
+	}
+
+	static boolean isClanMemberComponent(int componentId, MenuAction action)
+	{
+		if (action != MenuAction.CC_OP && action != MenuAction.CC_OP_LOW_PRIORITY)
+		{
+			return false;
+		}
+		return componentId == InterfaceID.ClansSidepanel.PLAYERLIST
+			|| componentId == InterfaceID.ClansGuestSidepanel.PLAYERLIST
+			|| WidgetUtil.componentToInterface(componentId) == InterfaceID.CLANS_MEMBERS;
 	}
 
 	private void openPanel()
@@ -883,9 +813,9 @@ public class RuneVersusPlugin extends Plugin
 		return cleaned;
 	}
 
-	private static String clean(String value)
+	static String clean(String value)
 	{
-		return value == null ? "" : Text.sanitize(value).trim();
+		return value == null ? "" : Text.sanitize(Text.removeTags(value)).trim();
 	}
 
 	private static String readableError(Throwable throwable)
@@ -896,24 +826,6 @@ public class RuneVersusPlugin extends Plugin
 			cursor = cursor.getCause();
 		}
 		return cursor.getMessage() == null ? cursor.getClass().getSimpleName() : cursor.getMessage();
-	}
-
-	private static String formatShort(long value)
-	{
-		long absolute = Math.abs(value);
-		if (absolute >= 1_000_000_000L)
-		{
-			return String.format("%.1fb", value / 1_000_000_000.0);
-		}
-		if (absolute >= 1_000_000L)
-		{
-			return String.format("%.1fm", value / 1_000_000.0);
-		}
-		if (absolute >= 10_000L)
-		{
-			return String.format("%.1fk", value / 1_000.0);
-		}
-		return String.format("%,d", value);
 	}
 
 	private static class VsArguments

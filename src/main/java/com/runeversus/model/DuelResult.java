@@ -192,6 +192,14 @@ public class DuelResult
 			.orElse(null);
 	}
 
+	public MetricResult getCombatAchievementMetric()
+	{
+		return activities.stream()
+			.filter(m -> m.getType() == MetricType.COMBAT_ACHIEVEMENTS)
+			.findFirst()
+			.orElse(null);
+	}
+
 	public MetricResult getClosestSteal()
 	{
 		return allCompetitiveMetrics().stream()

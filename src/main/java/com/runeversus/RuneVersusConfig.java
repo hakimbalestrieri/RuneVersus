@@ -11,8 +11,8 @@ import net.runelite.client.hiscore.HiscoreEndpoint;
 public interface RuneVersusConfig extends Config
 {
 	@ConfigSection(
-		name = "Comparison",
-		description = "How RuneVersus looks up and scores players.",
+		name = "Player data",
+		description = "Choose the account type and optional data sources.",
 		position = 0
 	)
 	String comparisonSection = "comparison";
@@ -31,8 +31,8 @@ public interface RuneVersusConfig extends Config
 
 	@ConfigItem(
 		keyName = "wiseOldManGains",
-		name = "Recent XP",
-		description = "Adds 24h, week, and month XP using Wise Old Man. Compared RSNs are sent to Wise Old Man.",
+		name = "Recent XP details",
+		description = "Adds 24h, week, and month XP to cards. Compared names are sent to Wise Old Man.",
 		section = comparisonSection,
 		position = 1
 	)
@@ -43,8 +43,8 @@ public interface RuneVersusConfig extends Config
 
 	@ConfigItem(
 		keyName = "localOptInSync",
-		name = "Private PB/clog import",
-		description = "Reads optional local PB and collection-log files from .runelite/rune-versus/sync.",
+		name = "CA tier & private data",
+		description = "Reads optional CA tier, PB, and collection-log files from .runelite/rune-versus/sync.",
 		section = comparisonSection,
 		position = 2
 	)
@@ -53,10 +53,23 @@ public interface RuneVersusConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "openInterfaceOnComparison",
+		name = "Open comparison window",
+		description = "Opens Player comparison in a separate window. Disable it to use the RuneLite side panel.",
+		section = comparisonSection,
+		position = 3
+	)
+	default boolean openInterfaceOnComparison()
+	{
+		return true;
+	}
+
 	@ConfigSection(
-		name = "Cards",
-		description = "PNG export and card style.",
-		position = 10
+		name = "Card export",
+		description = "Optional PNG export settings.",
+		position = 10,
+		closedByDefault = true
 	)
 	String cardSection = "cards";
 
@@ -109,16 +122,17 @@ public interface RuneVersusConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Social",
-		description = "Party, clan, chat, and right-click features.",
-		position = 20
+		name = "Party & clan",
+		description = "Optional social and right-click features.",
+		position = 20,
+		closedByDefault = true
 	)
 	String socialSection = "social";
 
 	@ConfigItem(
 		keyName = "playerMenuOptions",
 		name = "Right-click players",
-		description = "Adds VS Compare, VS Set A, and VS Set B to player right-click menus.",
+		description = "Adds VS Compare to visible players and clan members.",
 		section = socialSection,
 		position = 0
 	)
@@ -128,15 +142,39 @@ public interface RuneVersusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "clanSetMenuOptions",
+		name = "Clan VS Set options",
+		description = "Adds VS Set A and VS Set B when right-clicking a clan member.",
+		section = socialSection,
+		position = 1
+	)
+	default boolean clanSetMenuOptions()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "partyAnnounceCards",
 		name = "Party announce",
 		description = "Shares duel-card summaries with RuneLite Party members.",
 		section = socialSection,
-		position = 1
+		position = 2
 	)
 	default boolean partyAnnounceCards()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "wiseOldManGroupId",
+		name = "WOM group ID",
+		description = "Wise Old Man group used for the clan progress leaders (XP, CLogs, and total boss KC).",
+		section = socialSection,
+		position = 3
+	)
+	default String wiseOldManGroupId()
+	{
+		return "";
 	}
 
 	@Range(
@@ -146,24 +184,12 @@ public interface RuneVersusConfig extends Config
 	@ConfigItem(
 		keyName = "maxRosterPlayers",
 		name = "Roster limit",
-		description = "Maximum Party or clan players scanned for leaderboards, recaps, and Fight Night.",
+		description = "Maximum Party or clan players scanned for comparisons and leaderboards.",
 		section = socialSection,
-		position = 2
+		position = 4
 	)
 	default int maxRosterPlayers()
 	{
 		return 12;
-	}
-
-	@ConfigItem(
-		keyName = "watchlistRivals",
-		name = "Watchlist",
-		description = "Comma-separated rivals used by Watchlist Snipes.",
-		section = socialSection,
-		position = 3
-	)
-	default String watchlistRivals()
-	{
-		return "";
 	}
 }
