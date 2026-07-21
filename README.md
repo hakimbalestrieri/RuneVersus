@@ -3,6 +3,8 @@
 RuneVersus turns OSRS account comparison into shareable duel cards, clan recaps,
 and quick chat results.
 
+![RuneVersus player comparison](docs/images/player-comparison.png)
+
 Compare yourself, two typed RSNs, clanmates, or players mentioned
 through chat commands. RuneVersus scores public hiscore data, highlights close
 categories, and exports polished 16:9 PNG cards for Discord, Twitter, clan channels,
@@ -38,6 +40,8 @@ and stream overlays.
 - Optionally open the detailed two-player Versus view in the RuneLite side panel.
 - Import optional local PB and detailed collection-log data when both players opt in.
 
+![RuneVersus duel card](docs/images/duel-card.png)
+
 ## Social Modes
 
 RuneVersus includes social tools from the side panel:
@@ -54,6 +58,22 @@ RuneVersus includes social tools from the side panel:
   active-member counts, average active XP, and the three period leaders.
 - Export Progress Card: creates one 16:9 card containing all 15 period/category
   leaders and exposes it through the clickable `Open saved card` link.
+
+![RuneVersus monthly league](docs/images/monthly-league.png)
+
+## Monthly League Integrity
+
+- The competitive roster is frozen on the first successful load of a season.
+- A player is eligible only when both their clan join date and first usable WOM
+  snapshot fall within the first 72 hours of the month. Missing dates fail closed:
+  the player remains visible as Provisional but cannot enter the podium.
+- Later clan additions cannot enter the frozen roster. Previously frozen members
+  remain listed even if they leave the WOM group during the month.
+- After month end, a player needs a snapshot from the final 48 hours to remain
+  eligible. The first successful post-season refresh seals an immutable local result.
+- Archives are stored under `~/.runelite/rune-versus/leagues` and are not synced
+  between computers. For one authoritative clan podium, designate one organizer
+  to load the season during its first 72 hours and refresh it after month end.
 
 ## Settings
 
@@ -79,14 +99,16 @@ are copied, and right-click player menus are enabled.
   come from the official OSRS hiscores.
 - Recent 24h, week, and month XP requires Wise Old Man. Enabling this sends the
   compared RSNs to Wise Old Man.
+- WOM responses are cached for 5 to 30 minutes depending on the view. RuneVersus
+  identifies itself with a dedicated User-Agent, spaces requests, limits request
+  bursts, and honors server `Retry-After` cooldowns.
 - Clan Progress requires the numeric Wise Old Man group ID from the group's WOM
   page. RuneVersus makes five bulk read-only requests (day, week, month, year,
   and current bulk hiscores); rankings depend on the snapshots available in
   Wise Old Man.
-- Monthly League uses one WOM bulk-gains request with exact calendar start and
-  end dates. Results are cached for 30 minutes. Members whose first usable
-  snapshot is more than 72 hours after the season began are shown as Provisional
-  and cannot enter that month's podium.
+- Monthly League uses one WOM bulk-gains request with exact calendar dates plus
+  one group-membership request to verify clan join dates. Results are cached for
+  30 minutes and archived locally for roster integrity.
 - EHP normalizes skill XP and EHB normalizes boss KC using Wise Old Man's
   account- and activity-specific efficiency rates. Collection gains remain a
   separate recognition category because public totals cannot distinguish easy
@@ -141,5 +163,13 @@ Accounts before logging in to the development client.
 
 The project follows the RuneLite Plugin Hub standard build style and avoids
 non-RuneLite third-party runtime dependencies.
+
+Generate the checked-in release screenshots and Plugin Hub icon:
+
+```bash
+./gradlew releaseAssets
+```
+
+Report bugs through the [RuneVersus issue tracker](https://github.com/hakimbalestrieri/RuneVersus/issues).
 
 For Plugin Hub submission steps, see [PLUGIN_HUB_SUBMISSION.md](PLUGIN_HUB_SUBMISSION.md).

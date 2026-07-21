@@ -9,6 +9,8 @@ RuneVersus follows the RuneLite Plugin Hub `Creating new plugins` checklist:
 - No non-RuneLite third-party runtime dependency is required.
 - README describes the plugin features and data-source limitations.
 - BSD 2-Clause license is present.
+- Root `icon.png` is 48x48 pixels, within the Plugin Hub limit.
+- GitHub Actions validates the Java 11 build on every push and pull request.
 
 ## Local Validation
 
@@ -24,7 +26,7 @@ After this repository is pushed publicly, add exactly one file to your fork of
 
 ```properties
 # plugin-hub/plugins/rune-versus
-repository=https://github.com/<github-user>/runelite-versus.git
+repository=https://github.com/hakimbalestrieri/RuneVersus.git
 commit=<40-character commit hash from the public plugin repository>
 ```
 
@@ -36,7 +38,7 @@ commit from this file.
 Every plugin update needs a new Plugin Hub manifest commit hash:
 
 ```bash
-git -C runelite-versus rev-parse HEAD
+git -C RuneVersus rev-parse HEAD
 ```
 
 Paste that 40-character hash into `plugin-hub/plugins/rune-versus`, then open

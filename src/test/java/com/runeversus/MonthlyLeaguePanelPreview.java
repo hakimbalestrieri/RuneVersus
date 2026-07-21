@@ -29,7 +29,9 @@ public final class MonthlyLeaguePanelPreview
 				Graphics2D graphics = image.createGraphics();
 				panel.paint(graphics);
 				graphics.dispose();
-				File output = new File("build/previews/monthly-league-panel.png");
+				File output = new File(args.length == 0
+					? "build/previews/monthly-league-panel.png"
+					: args[0]);
 				output.getParentFile().mkdirs();
 				ImageIO.write(image, "png", output);
 				System.out.println(output.getAbsolutePath());
